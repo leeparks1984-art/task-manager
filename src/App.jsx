@@ -45,7 +45,8 @@ import {
   RotateCcw,
   Lock,
   Volume2,
-  VolumeX
+  VolumeX,
+  Share2
 } from 'lucide-react';
 
 // ==========================================
@@ -231,11 +232,16 @@ export default function App() {
   const [requests, setRequests] = useState([]);
   const [notifications, setNotifications] = useState([]);
 
-  // New Task Form State (Manager / Team Leader)
+  // New Task Form State (Manager / Team Leader - Supports Multiple Assignees)
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
-  const [taskAssigneeId, setTaskAssigneeId] = useState('');
+  const [taskAssigneeIds, setTaskAssigneeIds] = useState([]);
   const [taskPhoto, setTaskPhoto] = useState(null);
+
+  // Team Leader Reassign / Delegate Modal State
+  const [delegatingTask, setDelegatingTask] = useState(null);
+  const [delegateTargetIds, setDelegateTargetIds] = useState([]);
+  const [delegateNote, setDelegateNote] = useState('');
 
   // Colleague Task Completion Modal State
   const [completingTask, setCompletingTask] = useState(null);
@@ -417,7 +423,6 @@ export default function App() {
         setFcmEnabled(true);
       }
     } else {
-      // If the user's account was deleted by the manager, sign them out cleanly
       setCurrentUser(null);
       localStorage.removeItem(SESSION_STORAGE_KEY);
     }
@@ -473,7 +478,6 @@ export default function App() {
         createdAt: new Date().toISOString()
       });
 
-      // Collect registered FCM push tokens for target user(s)
       let targetTokens = [];
       if (targetUserId) {
         const targetUser = teamUsers.find((u) => u.id === targetUserId);
@@ -490,7 +494,6 @@ export default function App() {
           });
       }
 
-      // Call Vercel Serverless Push API to wake closed browsers / locked phones
       if (targetTokens.length > 0) {
         fetch('/api/send-push', {
           method: 'POST',
@@ -609,46 +612,185 @@ export default function App() {
     }
   };
 
-  // Assign New Task (Manager & Team Leaders)
+  // Toggle Checkbox Selection for Multi-Assignee Task Form
+  const toggleTaskAssignee = (userId) => {
+    setTaskAssigneeIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
+  };
+
+  // Toggle Checkbox Selection for Team Leader Delegation Modal
+  const toggleDelegateTarget = (userId) => {
+    setDelegateTargetIds((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
+  };
+
+  // Assign New Task to One or Multiple Team Members (Manager & Team Leaders)
   const handleCreateTask = async (e) => {
     e.preventDefault();
-    if (!taskTitle.trim() || !taskAssigneeId) return;
-    const assigneeObj = teamUsers.find((u) => u.id === taskAssigneeId);
-    if (!assigneeObj) return;
+    if (!taskTitle.trim() || taskAssigneeIds.length === 0) {
+      showToast("Select Assignee", "Please tick at least one person to assign this task to.");
+      return;
+    }
+
+    const selectedUsers = teamUsers.filter((u) => taskAssigneeIds.includes(u.id));
+    if (selectedUsers.length === 0) return;
 
     try {
       const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
-      await addDoc(tasksRef, {
-        title: taskTitle.trim(),
-        description: taskDesc.trim(),
-        assigneeId: assigneeObj.id,
-        assigneeName: assigneeObj.name,
-        assigneeRole: assigneeObj.role,
-        createdById: currentUser.id,
-        createdByName: currentUser.name,
-        managerPhoto: taskPhoto || null,
-        completionPhoto: null,
-        completionNote: '',
-        comments: [],
-        status: 'active',
-        createdAt: new Date().toISOString(),
-        completedAt: null,
-        validatedAt: null
+
+      for (const assigneeObj of selectedUsers) {
+        await addDoc(tasksRef, {
+          title: taskTitle.trim(),
+          description: taskDesc.trim(),
+          assigneeId: assigneeObj.id,
+          assigneeName: assigneeObj.name,
+          assigneeRole: assigneeObj.role,
+          createdById: currentUser.id,
+          createdByName: currentUser.name,
+          delegatedByName: null,
+          managerPhoto: taskPhoto || null,
+          completionPhoto: null,
+          completionNote: '',
+          comments: [],
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          completedAt: null,
+          validatedAt: null
+        });
+
+        await sendNotification(
+          assigneeObj.id,
+          null,
+          'New Task Assigned',
+          `${currentUser.name} assigned "${taskTitle.trim()}" to you.`
+        );
+      }
+
+      const assignedNames = selectedUsers.map((u) => u.name).join(', ');
+      setTaskTitle('');
+      setTaskDesc('');
+      setTaskAssigneeIds([]);
+      setTaskPhoto(null);
+      showToast(
+        selectedUsers.length > 1 ? `Assigned to ${selectedUsers.length} Members` : "Task Assigned",
+        `Dropped onto: ${assignedNames}`
+      );
+    } catch (err) {
+      console.error("Error creating task:", err);
+    }
+  };
+
+  // Team Leader Reassigns / Delegates a Manager Task to One or Multiple Colleagues
+  const handleConfirmDelegation = async (e) => {
+    e.preventDefault();
+    if (!delegatingTask || delegateTargetIds.length === 0) {
+      showToast("Select Colleague", "Please select at least one colleague to reassign this task to.");
+      return;
+    }
+
+    const targetColleagues = teamUsers.filter((u) => delegateTargetIds.includes(u.id));
+    if (targetColleagues.length === 0) return;
+
+    try {
+      const extraNote = delegateNote.trim()
+        ? `\n\n[Note from ${currentUser.name}: ${delegateNote.trim()}]`
+        : '';
+      const updatedDescription = `${delegatingTask.description || ''}${extraNote}`.trim();
+
+      if (targetColleagues.length === 1) {
+        // Reassign the existing task document directly to the single chosen colleague
+        const target = targetColleagues[0];
+        const taskDoc = doc(db, 'artifacts', appId, 'public', 'data', 'tasks', delegatingTask.id);
+        await updateDoc(taskDoc, {
+          assigneeId: target.id,
+          assigneeName: target.name,
+          assigneeRole: target.role,
+          description: updatedDescription,
+          delegatedByName: currentUser.name,
+          delegatedAt: new Date().toISOString()
+        });
+
+        await sendNotification(
+          target.id,
+          null,
+          'Task Assigned by Team Leader',
+          `${currentUser.name} assigned "${delegatingTask.title}" to you.`
+        );
+      } else {
+        // Multiple colleagues selected: create an individual task copy for each colleague and remove the original TL placeholder
+        const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
+        for (const target of targetColleagues) {
+          await addDoc(tasksRef, {
+            title: delegatingTask.title,
+            description: updatedDescription,
+            assigneeId: target.id,
+            assigneeName: target.name,
+            assigneeRole: target.role,
+            createdById: delegatingTask.createdById || currentUser.id,
+            createdByName: delegatingTask.createdByName || 'Manager',
+            delegatedByName: currentUser.name,
+            delegatedAt: new Date().toISOString(),
+            managerPhoto: delegatingTask.managerPhoto || null,
+            completionPhoto: null,
+            completionNote: '',
+            comments: delegatingTask.comments || [],
+            status: 'active',
+            createdAt: new Date().toISOString(),
+            completedAt: null,
+            validatedAt: null
+          });
+
+          await sendNotification(
+            target.id,
+            null,
+            'Task Assigned by Team Leader',
+            `${currentUser.name} assigned "${delegatingTask.title}" to you.`
+          );
+        }
+
+        // Remove original task from Team Leader's personal queue now that it has been split out to colleagues
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tasks', delegatingTask.id));
+      }
+
+      const targetNames = targetColleagues.map((u) => u.name).join(', ');
+      setDelegatingTask(null);
+      setDelegateTargetIds([]);
+      setDelegateNote('');
+      showToast("Task Reassigned", `Delegated to ${targetNames}.`);
+    } catch (err) {
+      console.error("Error delegating task:", err);
+      showToast("Error", "Could not reassign task.");
+    }
+  };
+
+  // Quick Single-Select Reassign from Active Team Workload Board
+  const handleQuickReassign = async (task, newAssigneeId) => {
+    if (!newAssigneeId || newAssigneeId === task.assigneeId) return;
+    const newAssignee = teamUsers.find((u) => u.id === newAssigneeId);
+    if (!newAssignee) return;
+
+    try {
+      const taskDoc = doc(db, 'artifacts', appId, 'public', 'data', 'tasks', task.id);
+      await updateDoc(taskDoc, {
+        assigneeId: newAssignee.id,
+        assigneeName: newAssignee.name,
+        assigneeRole: newAssignee.role,
+        delegatedByName: currentUser.name,
+        delegatedAt: new Date().toISOString()
       });
 
       await sendNotification(
-        assigneeObj.id,
+        newAssignee.id,
         null,
-        'New Task Assigned',
-        `${currentUser.name} assigned "${taskTitle.trim()}" to you.`
+        'Task Reassigned to You',
+        `${currentUser.name} reassigned "${task.title}" to your list.`
       );
 
-      setTaskTitle('');
-      setTaskDesc('');
-      setTaskPhoto(null);
-      showToast("Task Assigned", `Dropped onto ${assigneeObj.name}'s list.`);
+      showToast("Task Reassigned", `Moved "${task.title}" to ${newAssignee.name}.`);
     } catch (err) {
-      console.error("Error creating task:", err);
+      console.error("Quick reassign error:", err);
     }
   };
 
@@ -1069,6 +1211,9 @@ export default function App() {
     return false;
   });
 
+  const colleaguesOnly = teamUsers.filter((u) => u.role === 'colleague');
+  const teamLeadersOnly = teamUsers.filter((u) => u.role === 'team_leader');
+
   const myAssignedTasks = tasks.filter((t) => t.assigneeId === currentUser.id && t.status === 'active');
   const myPendingTasks = tasks.filter((t) => t.assigneeId === currentUser.id && t.status === 'pending_validation');
   const myArchivedTasks = tasks.filter((t) => t.assigneeId === currentUser.id && t.status === 'archived');
@@ -1151,6 +1296,114 @@ export default function App() {
         </div>
       )}
 
+      {/* Team Leader Reassign / Delegate to Colleagues Modal */}
+      {delegatingTask && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center space-x-2">
+                <Share2 className="w-4 h-4 text-violet-600" />
+                <h3 className="font-bold text-slate-900 text-base">Reassign Task to Colleague(s)</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setDelegatingTask(null);
+                  setDelegateTargetIds([]);
+                  setDelegateNote('');
+                }}
+                className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmDelegation} className="space-y-4">
+              <div className="p-3 rounded-xl bg-violet-50/70 border border-violet-200">
+                <p className="text-xs font-bold text-slate-800">{delegatingTask.title}</p>
+                <p className="text-xs text-slate-600 mt-0.5">{delegatingTask.description}</p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-600 uppercase">
+                    Select Colleague(s) ({delegateTargetIds.length} Selected)
+                  </label>
+                  <div className="flex space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => setDelegateTargetIds(colleaguesOnly.map((c) => c.id))}
+                      className="text-[11px] font-semibold text-indigo-600 hover:underline">
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDelegateTargetIds([])}
+                      className="text-[11px] font-semibold text-slate-400 hover:underline">
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1 bg-slate-50/50">
+                  {colleaguesOnly.map((col) => {
+                    const checked = delegateTargetIds.includes(col.id);
+                    return (
+                      <label
+                        key={col.id}
+                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-all ${
+                          checked ? 'bg-indigo-50 border border-indigo-200 font-semibold text-indigo-900' : 'hover:bg-white'
+                        }`}>
+                        <div className="flex items-center space-x-2.5">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleDelegateTarget(col.id)}
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span>{col.name}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400">Colleague</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                  Add Team Leader Handover Note (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={delegateNote}
+                  onChange={(e) => setDelegateNote(e.target.value)}
+                  placeholder="e.g. Please focus on the bottom two shelves first..."
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDelegatingTask(null);
+                    setDelegateTargetIds([]);
+                    setDelegateNote('');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold flex items-center space-x-1.5">
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Push to Selected Colleague(s)</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Colleague Task Completion Modal (Photo + Note) */}
       {completingTask && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -1165,7 +1418,7 @@ export default function App() {
             <form onSubmit={handleConfirmCompletion} className="space-y-4">
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                 <p className="text-xs font-bold text-slate-800">{completingTask.title}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{completingTask.description}</p>
+                <p className="text-xs text-slate-500 mt-0.5 whitespace-pre-line">{completingTask.description}</p>
               </div>
 
               <div>
@@ -1457,7 +1710,7 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Assign Task Form with Reference Photo */}
+              {/* Assign Task Form with Multi-Select Checklist & Reference Photo */}
               <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-5">
                 <div className="flex items-center space-x-3 pb-3 border-b border-slate-100">
                   <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
@@ -1489,21 +1742,74 @@ export default function App() {
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Assign To</label>
-                    <select
-                      required
-                      value={taskAssigneeId}
-                      onChange={(e) => setTaskAssigneeId(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white">
-                      <option value="">Select team member...</option>
-                      {assignableUsers.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name} ({m.role.replace('_', ' ')})
-                        </option>
-                      ))}
-                    </select>
+
+                  {/* Multi-Select Assignees Checklist */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold text-slate-600 uppercase">
+                        Assign To ({taskAssigneeIds.length} Selected)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setTaskAssigneeIds([])}
+                        className="text-[11px] font-semibold text-slate-400 hover:text-slate-600">
+                        Clear
+                      </button>
+                    </div>
+
+                    {/* Quick Group Selection Pills */}
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setTaskAssigneeIds(colleaguesOnly.map((c) => c.id))}
+                        className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 text-[11px] font-semibold transition-all">
+                        All Colleagues ({colleaguesOnly.length})
+                      </button>
+                      {isManager && teamLeadersOnly.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setTaskAssigneeIds(teamLeadersOnly.map((tl) => tl.id))}
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-violet-50 hover:text-violet-700 text-slate-700 text-[11px] font-semibold transition-all">
+                          All Team Leaders ({teamLeadersOnly.length})
+                        </button>
+                      )}
+                      {isManager && (
+                        <button
+                          type="button"
+                          onClick={() => setTaskAssigneeIds(assignableUsers.map((u) => u.id))}
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 text-[11px] font-semibold transition-all">
+                          Everyone ({assignableUsers.length})
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1 bg-slate-50/50">
+                      {assignableUsers.map((m) => {
+                        const isChecked = taskAssigneeIds.includes(m.id);
+                        return (
+                          <label
+                            key={m.id}
+                            className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-all ${
+                              isChecked
+                                ? 'bg-indigo-50 border border-indigo-200 font-semibold text-indigo-900'
+                                : 'hover:bg-white text-slate-700'
+                            }`}>
+                            <div className="flex items-center space-x-2.5">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleTaskAssignee(m.id)}
+                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                              />
+                              <span>{m.name}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 capitalize">{m.role.replace('_', ' ')}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
+
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Reference Photo (Optional)</label>
                     <label className="flex items-center justify-center space-x-2 w-full py-2.5 px-3 border border-dashed border-slate-300 rounded-xl cursor-pointer hover:bg-slate-50">
@@ -1521,7 +1827,11 @@ export default function App() {
                     type="submit"
                     className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-sm shadow-md transition-all flex items-center justify-center space-x-2">
                     <Plus className="w-4 h-4" />
-                    <span>Drop onto Member List</span>
+                    <span>
+                      {taskAssigneeIds.length > 1
+                        ? `Drop onto ${taskAssigneeIds.length} Member Lists`
+                        : 'Drop onto Member List'}
+                    </span>
                   </button>
                 </form>
               </div>
@@ -1551,11 +1861,18 @@ export default function App() {
                         <div key={t.id} className="bg-white p-5 rounded-xl border border-amber-200 shadow-xs space-y-4">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div>
-                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[11px] font-semibold">
-                                Completed by {t.assigneeName}
-                              </span>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[11px] font-semibold">
+                                  Completed by {t.assigneeName}
+                                </span>
+                                {t.delegatedByName && (
+                                  <span className="px-2 py-0.5 bg-violet-50 text-violet-700 rounded text-[11px] font-semibold">
+                                    Delegated by {t.delegatedByName}
+                                  </span>
+                                )}
+                              </div>
                               <h4 className="font-bold text-slate-900 text-base mt-1">{t.title}</h4>
-                              <p className="text-xs text-slate-600">{t.description}</p>
+                              <p className="text-xs text-slate-600 whitespace-pre-line">{t.description}</p>
                             </div>
                             <div className="flex items-center space-x-2">
                               <button
@@ -1663,9 +1980,29 @@ export default function App() {
                               <p className="text-xs text-slate-400 italic">No active tasks.</p>
                             ) : (
                               memberActive.map((t) => (
-                                <div key={t.id} className="bg-white p-2.5 rounded-lg border border-slate-200 text-xs">
-                                  <p className="font-semibold text-slate-800">{t.title}</p>
-                                  <p className="text-slate-500 text-[11px]">{t.description}</p>
+                                <div key={t.id} className="bg-white p-2.5 rounded-lg border border-slate-200 text-xs space-y-2">
+                                  <div>
+                                    <p className="font-semibold text-slate-800">{t.title}</p>
+                                    <p className="text-slate-500 text-[11px] whitespace-pre-line">{t.description}</p>
+                                    {t.delegatedByName && (
+                                      <span className="inline-block mt-1 px-1.5 py-0.5 bg-violet-50 text-violet-700 rounded text-[10px] font-semibold">
+                                        Delegated by {t.delegatedByName}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center justify-between pt-1.5 border-t border-slate-100">
+                                    <span className="text-[10px] font-semibold text-slate-400">Reassign to:</span>
+                                    <select
+                                      value={t.assigneeId}
+                                      onChange={(e) => handleQuickReassign(t, e.target.value)}
+                                      className="text-[11px] bg-slate-50 border border-slate-200 rounded-md px-2 py-0.5 text-slate-700 font-medium">
+                                      {assignableUsers.map((u) => (
+                                        <option key={u.id} value={u.id}>
+                                          {u.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
                                 </div>
                               ))
                             )}
@@ -1748,7 +2085,16 @@ export default function App() {
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <h3 className="font-bold text-slate-900 text-base">My Active Tasks</h3>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">
+                      {currentUser.role === 'team_leader' ? 'Tasks Assigned to Me by Manager' : 'My Active Tasks'}
+                    </h3>
+                    {currentUser.role === 'team_leader' && (
+                      <p className="text-xs text-slate-500">
+                        You can complete these yourself or reassign/delegate them to one or more colleagues.
+                      </p>
+                    )}
+                  </div>
                   <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-xs font-bold">
                     {myAssignedTasks.length} Active
                   </span>
@@ -1764,13 +2110,20 @@ export default function App() {
                   <div className="space-y-4">
                     {myAssignedTasks.map((t) => (
                       <div key={t.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                           <div className="space-y-1.5">
-                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-[11px] font-semibold">
-                              Assigned by {t.createdByName || 'Manager'}
-                            </span>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-[11px] font-semibold">
+                                Assigned by {t.createdByName || 'Manager'}
+                              </span>
+                              {t.delegatedByName && (
+                                <span className="px-2 py-0.5 bg-violet-50 text-violet-700 rounded text-[11px] font-semibold">
+                                  Delegated by {t.delegatedByName}
+                                </span>
+                              )}
+                            </div>
                             <h4 className="font-bold text-slate-900 text-base">{t.title}</h4>
-                            <p className="text-xs text-slate-600 leading-relaxed">{t.description}</p>
+                            <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">{t.description}</p>
                             {t.managerPhoto && (
                               <div className="pt-2">
                                 <p className="text-[11px] font-semibold text-slate-500 mb-1">Manager Reference Photo (Click to enlarge):</p>
@@ -1783,12 +2136,27 @@ export default function App() {
                               </div>
                             )}
                           </div>
-                          <button
-                            onClick={() => setCompletingTask(t)}
-                            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs shadow-md flex items-center justify-center space-x-2 shrink-0">
-                            <Camera className="w-4 h-4" />
-                            <span>Complete & Add Photo</span>
-                          </button>
+
+                          <div className="flex flex-col sm:items-end gap-2 shrink-0">
+                            {currentUser.role === 'team_leader' && (
+                              <button
+                                onClick={() => {
+                                  setDelegatingTask(t);
+                                  setDelegateTargetIds([]);
+                                  setDelegateNote('');
+                                }}
+                                className="w-full sm:w-auto px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white font-semibold rounded-xl text-xs shadow-sm flex items-center justify-center space-x-1.5">
+                                <Share2 className="w-3.5 h-3.5" />
+                                <span>Reassign to Colleague(s)</span>
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setCompletingTask(t)}
+                              className="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs shadow-md flex items-center justify-center space-x-2">
+                              <Camera className="w-4 h-4" />
+                              <span>Complete & Add Photo</span>
+                            </button>
+                          </div>
                         </div>
 
                         {/* Task Comments */}
