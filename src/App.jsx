@@ -68,6 +68,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = "store-team-tasks-v1";
+const SESSION_STORAGE_KEY = "taskflow_saved_user_v1";
 
 // Default Seeded Team Structure: 1 Manager, 2 Team Leaders, 7 Colleagues
 const DEFAULT_USERS = [
@@ -192,8 +193,15 @@ export default function App() {
   const [fbUser, setFbUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  // Logged-in User Profile & Login Modal State
-  const [currentUser, setCurrentUser] = useState(null);
+  // Logged-in User Profile (Initialized from localStorage so you stay signed in)
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem(SESSION_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [loginTarget, setLoginTarget] = useState(null);
   const [pinInput, setPinInput] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -394,15 +402,24 @@ export default function App() {
     };
   }, [fbUser]);
 
-  // Keep currentUser synced with live Firestore profile updates
+  // Keep currentUser synced with live Firestore profile updates & persist in localStorage
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || teamUsers.length === 0) return;
     const updatedProfile = teamUsers.find((u) => u.id === currentUser.id);
     if (updatedProfile) {
       setCurrentUser(updatedProfile);
+      try {
+        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(updatedProfile));
+      } catch (err) {
+        console.error("Storage save error:", err);
+      }
       if ((updatedProfile.fcmTokens || []).length > 0 && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
         setFcmEnabled(true);
       }
+    } else {
+      // If the user's account was deleted by the manager, sign them out cleanly
+      setCurrentUser(null);
+      localStorage.removeItem(SESSION_STORAGE_KEY);
     }
   }, [teamUsers]);
 
@@ -490,7 +507,7 @@ export default function App() {
     }
   };
 
-  // Handle Login with PIN (and unlock audio engine on user tap)
+  // Handle Login with PIN (and save session to localStorage so user stays logged in)
   const handleLoginSubmit = (e) => {
     e.preventDefault();
     if (!loginTarget) return;
@@ -509,12 +526,28 @@ export default function App() {
 
       prevUnreadCountRef.current = null;
       setCurrentUser(loginTarget);
+      try {
+        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(loginTarget));
+      } catch (err) {
+        console.error("Could not save login session:", err);
+      }
       setLoginTarget(null);
       setPinInput('');
       setLoginError('');
       setActiveTab('tasks');
     } else {
       setLoginError('Incorrect PIN. Please try again.');
+    }
+  };
+
+  // Handle Explicit Logout (Clears saved session)
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setShowNotifDropdown(false);
+    try {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch (err) {
+      console.error("Error clearing session:", err);
     }
   };
 
@@ -943,7 +976,7 @@ export default function App() {
                 <button
                   type="submit"
                   className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-semibold text-sm transition-all">
-                  Unlock Workspace
+                  Unlock & Stay Signed In
                 </button>
               </form>
             </div>
@@ -966,7 +999,7 @@ export default function App() {
                       </div>
                       <div className="text-left">
                         <h3 className="font-bold text-sm">{u.name}</h3>
-                        <p className="text-[11px] text-indigo-200">Ambient Oversight, Validation & User Admin</p>
+                        <p className="text-[11px] text-indigo-200">Full Store Oversight, Validation & User Admin</p>
                       </div>
                     </div>
                     <ArrowRight className="w-4 h-4 text-indigo-200 group-hover:translate-x-1 transition-transform" />
@@ -1327,7 +1360,7 @@ export default function App() {
             </div>
 
             <button
-              onClick={() => { setCurrentUser(null); setShowNotifDropdown(false); }}
+              onClick={handleLogout}
               className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-semibold transition-all flex items-center space-x-1.5">
               <LogOut className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Log Out</span>
