@@ -406,10 +406,11 @@ export default function App() {
     }
   }, [teamUsers]);
 
-  // Calculate unread notifications for current user
+  // Calculate visible & unread notifications for current user (excluding ones they cleared)
   const isSupervisor = currentUser?.role === 'manager' || currentUser?.role === 'team_leader';
   const myNotifications = currentUser
     ? notifications.filter((n) => {
+        if ((n.clearedBy || []).includes(currentUser.id)) return false;
         if (n.targetUserId === currentUser.id) return true;
         if (n.targetRoleGroup === 'supervisors' && isSupervisor) return true;
         return false;
@@ -451,6 +452,7 @@ export default function App() {
         title,
         message,
         readBy: [],
+        clearedBy: [],
         createdAt: new Date().toISOString()
       });
 
@@ -826,14 +828,54 @@ export default function App() {
     showToast("Archive Cleared", "All archived tasks removed.");
   };
 
-  // Mark Notification as Read
+  // Mark Single Notification as Read
   const markNotifRead = async (notif) => {
     if (!currentUser) return;
     const readList = notif.readBy || [];
     if (!readList.includes(currentUser.id)) {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'notifications', notif.id), {
-        readBy: [...readList, currentUser.id]
+        readBy: arrayUnion(currentUser.id)
       });
+    }
+  };
+
+  // Dismiss a Single Notification
+  const handleDismissNotification = async (e, notif) => {
+    e.stopPropagation();
+    if (!currentUser) return;
+    try {
+      const notifDoc = doc(db, 'artifacts', appId, 'public', 'data', 'notifications', notif.id);
+      if (notif.targetUserId === currentUser.id) {
+        await deleteDoc(notifDoc);
+      } else {
+        await updateDoc(notifDoc, {
+          clearedBy: arrayUnion(currentUser.id),
+          readBy: arrayUnion(currentUser.id)
+        });
+      }
+    } catch (err) {
+      console.error("Error dismissing notification:", err);
+    }
+  };
+
+  // Clear All Notifications for Current User
+  const handleClearAllNotifications = async () => {
+    if (!currentUser || myNotifications.length === 0) return;
+    try {
+      for (const notif of myNotifications) {
+        const notifDoc = doc(db, 'artifacts', appId, 'public', 'data', 'notifications', notif.id);
+        if (notif.targetUserId === currentUser.id) {
+          await deleteDoc(notifDoc);
+        } else {
+          await updateDoc(notifDoc, {
+            clearedBy: arrayUnion(currentUser.id),
+            readBy: arrayUnion(currentUser.id)
+          });
+        }
+      }
+      showToast("Notifications Cleared", "Your notification list has been cleared.");
+    } catch (err) {
+      console.error("Error clearing notifications:", err);
     }
   };
 
@@ -1222,10 +1264,20 @@ export default function App() {
               </button>
 
               {showNotifDropdown && (
-                <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-50 space-y-3">
+                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-50 space-y-3">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <span className="font-bold text-xs text-slate-800">Notifications</span>
-                    <div className="flex items-center space-x-3">
+                    <span className="font-bold text-xs text-slate-800">
+                      Notifications ({myNotifications.length})
+                    </span>
+                    <div className="flex items-center space-x-2.5">
+                      {myNotifications.length > 0 && (
+                        <button
+                          onClick={handleClearAllNotifications}
+                          className="text-[11px] text-rose-600 font-semibold hover:underline flex items-center space-x-1">
+                          <Trash2 className="w-3 h-3" />
+                          <span>Clear All</span>
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           playNotificationChime();
@@ -1243,20 +1295,28 @@ export default function App() {
                     {myNotifications.length === 0 ? (
                       <p className="text-xs text-slate-400 italic py-3 text-center">No notifications yet.</p>
                     ) : (
-                      myNotifications.slice(0, 12).map((n) => {
+                      myNotifications.slice(0, 15).map((n) => {
                         const isUnread = !(n.readBy || []).includes(currentUser.id);
                         return (
                           <div
                             key={n.id}
                             onClick={() => markNotifRead(n)}
-                            className={`p-2.5 rounded-xl border text-xs cursor-pointer transition-all ${
+                            className={`p-2.5 rounded-xl border text-xs cursor-pointer transition-all flex items-start justify-between gap-2 ${
                               isUnread ? 'bg-indigo-50/70 border-indigo-200' : 'bg-slate-50 border-slate-100 text-slate-500'
                             }`}>
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-slate-800">{n.title}</span>
-                              {isUnread && <span className="w-2 h-2 rounded-full bg-indigo-600"></span>}
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-1.5">
+                                <span className="font-bold text-slate-800">{n.title}</span>
+                                {isUnread && <span className="w-2 h-2 rounded-full bg-indigo-600 shrink-0"></span>}
+                              </div>
+                              <p className="text-[11px] mt-0.5">{n.message}</p>
                             </div>
-                            <p className="text-[11px] mt-0.5">{n.message}</p>
+                            <button
+                              onClick={(e) => handleDismissNotification(e, n)}
+                              title="Dismiss notification"
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-all shrink-0">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         );
                       })
