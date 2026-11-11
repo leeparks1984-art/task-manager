@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
   getAuth,
@@ -21,6 +21,7 @@ import {
   Plus,
   LogOut,
   Bell,
+  BellRing,
   ShieldCheck,
   Archive,
   Users,
@@ -29,14 +30,15 @@ import {
   ArrowRight,
   Layers,
   Camera,
-  MessageSquare,
   Trash2,
   UserPlus,
   Send,
   X,
   Calendar,
   RotateCcw,
-  Lock
+  Lock,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 
 // ==========================================
@@ -76,6 +78,82 @@ const AVATAR_COLORS = [
   'bg-amber-600', 'bg-rose-600', 'bg-cyan-600', 'bg-teal-600'
 ];
 
+// Built-in Web Audio API two-tone notification chime (when app is open)
+let sharedAudioCtx = null;
+const playNotificationChime = () => {
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    if (!sharedAudioCtx) {
+      sharedAudioCtx = new AudioContextClass();
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume();
+    }
+
+    const now = sharedAudioCtx.currentTime;
+
+    // First tone (A5 - 880Hz)
+    const osc1 = sharedAudioCtx.createOscillator();
+    const gain1 = sharedAudioCtx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(880, now);
+    gain1.gain.setValueAtTime(0.25, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    osc1.connect(gain1);
+    gain1.connect(sharedAudioCtx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.25);
+
+    // Second tone (C#6 - 1108.73Hz)
+    const osc2 = sharedAudioCtx.createOscillator();
+    const gain2 = sharedAudioCtx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(1108.73, now + 0.15);
+    gain2.gain.setValueAtTime(0.3, now + 0.15);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+    osc2.connect(gain2);
+    gain2.connect(sharedAudioCtx.destination);
+    osc2.start(now + 0.15);
+    osc2.stop(now + 0.55);
+
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate([200, 100, 200]);
+    }
+  } catch (err) {
+    console.error("Audio playback error:", err);
+  }
+};
+
+// Trigger Native OS Lock-Screen / System Banner Notification
+const triggerSystemNotification = async (title, body) => {
+  if (typeof window === 'undefined' || !('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+
+  try {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg && reg.showNotification) {
+        await reg.showNotification(title, {
+          body,
+          icon: '/vite.svg',
+          badge: '/vite.svg',
+          vibrate: [200, 100, 200],
+          requireInteraction: false,
+          tag: 'taskflow-' + Date.now()
+        });
+        return;
+      }
+    }
+    new Notification(title, {
+      body,
+      icon: '/vite.svg'
+    });
+  } catch (err) {
+    console.error("System notification error:", err);
+  }
+};
+
 // Helper to compress mobile photos so they fit cleanly in Firestore
 const compressImage = (file) => {
   return new Promise((resolve, reject) => {
@@ -109,6 +187,13 @@ export default function App() {
   const [loginTarget, setLoginTarget] = useState(null);
   const [pinInput, setPinInput] = useState('');
   const [loginError, setLoginError] = useState('');
+
+  // Audible & System Lock-Screen Notification State
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [notifPermission, setNotifPermission] = useState(
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
+  );
+  const prevUnreadCountRef = useRef(null);
 
   // Self-Service Change PIN Modal State
   const [showPinModal, setShowPinModal] = useState(false);
@@ -165,7 +250,44 @@ export default function App() {
     setToast({ show: true, title, message });
     setTimeout(() => {
       setToast((prev) => ({ ...prev, show: false }));
-    }, 4000);
+    }, 4500);
+  };
+
+  // Register Service Worker for Native Mobile Lock-Screen Notifications
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch((err) => {
+        console.log('Service worker registration skipped:', err);
+      });
+    }
+  }, []);
+
+  // Request Native OS Lock-Screen Notification Permission
+  const handleEnableLockScreenAlerts = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      showToast(
+        "Add to Home Screen First",
+        "On iPhone, tap Share then Add to Home Screen to enable lock-screen alerts."
+      );
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      setNotifPermission(permission);
+      if (permission === 'granted') {
+        playNotificationChime();
+        await triggerSystemNotification(
+          "TaskFlow Lock-Screen Alerts Active",
+          "You will now receive system banners and chimes for new tasks and validations."
+        );
+        showToast("Lock Alerts Enabled", "System lock-screen notifications are now active.");
+      } else {
+        showToast("Permission Blocked", "Please allow notifications in your browser/phone settings.");
+      }
+    } catch (err) {
+      console.error("Notification permission error:", err);
+    }
   };
 
   // 1. Firebase Auth Connection
@@ -239,6 +361,41 @@ export default function App() {
     }
   }, [teamUsers]);
 
+  // Calculate unread notifications for current user
+  const isSupervisor = currentUser?.role === 'manager' || currentUser?.role === 'team_leader';
+  const myNotifications = currentUser
+    ? notifications.filter((n) => {
+        if (n.targetUserId === currentUser.id) return true;
+        if (n.targetRoleGroup === 'supervisors' && isSupervisor) return true;
+        return false;
+      })
+    : [];
+  const unreadNotifications = currentUser
+    ? myNotifications.filter((n) => !(n.readBy || []).includes(currentUser.id))
+    : [];
+  const unreadCount = unreadNotifications.length;
+
+  // Trigger Audible Chime, System Lock-Screen Banner & Toast when a new unread notification arrives
+  useEffect(() => {
+    if (!currentUser) {
+      prevUnreadCountRef.current = null;
+      return;
+    }
+
+    if (prevUnreadCountRef.current !== null && unreadCount > prevUnreadCountRef.current) {
+      if (soundEnabled) {
+        playNotificationChime();
+      }
+      const newestAlert = unreadNotifications[0];
+      if (newestAlert) {
+        showToast(newestAlert.title, newestAlert.message);
+        triggerSystemNotification(newestAlert.title, newestAlert.message);
+      }
+    }
+
+    prevUnreadCountRef.current = unreadCount;
+  }, [unreadCount, currentUser?.id, soundEnabled]);
+
   // Helper to push a real-time notification
   const sendNotification = async (targetUserId, targetRoleGroup, title, message) => {
     try {
@@ -256,11 +413,24 @@ export default function App() {
     }
   };
 
-  // Handle Login with PIN
+  // Handle Login with PIN (and unlock audio engine on user tap)
   const handleLoginSubmit = (e) => {
     e.preventDefault();
     if (!loginTarget) return;
     if (pinInput === (loginTarget.pin || '1234')) {
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioContextClass && !sharedAudioCtx) {
+          sharedAudioCtx = new AudioContextClass();
+        }
+        if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
+          sharedAudioCtx.resume();
+        }
+      } catch (err) {
+        console.error(err);
+      }
+
+      prevUnreadCountRef.current = null;
       setCurrentUser(loginTarget);
       setLoginTarget(null);
       setPinInput('');
@@ -740,7 +910,6 @@ export default function App() {
   // ==========================================
   // PERMISSIONS & FILTERED DATA
   // ==========================================
-  const isSupervisor = currentUser.role === 'manager' || currentUser.role === 'team_leader';
   const isManager = currentUser.role === 'manager';
 
   const assignableUsers = teamUsers.filter((u) => {
@@ -757,12 +926,6 @@ export default function App() {
   const allPendingTasks = tasks.filter((t) => t.status === 'pending_validation');
   const allArchivedTasks = tasks.filter((t) => t.status === 'archived');
 
-  const myNotifications = notifications.filter((n) => {
-    if (n.targetUserId === currentUser.id) return true;
-    if (n.targetRoleGroup === 'supervisors' && isSupervisor) return true;
-    return false;
-  });
-  const unreadCount = myNotifications.filter((n) => !(n.readBy || []).includes(currentUser.id)).length;
   const pendingRequestsCount = requests.filter((r) => r.status === 'pending').length;
 
   return (
@@ -920,7 +1083,44 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 sm:space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-2.5">
+            {/* Native Lock-Screen Alerts Permission Button */}
+            <button
+              onClick={handleEnableLockScreenAlerts}
+              title="Enable Phone Lock-Screen Notifications"
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center space-x-1 ${
+                notifPermission === 'granted'
+                  ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                  : 'bg-amber-100 text-amber-900 hover:bg-amber-200'
+              }`}>
+              <BellRing className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">
+                {notifPermission === 'granted' ? 'Lock Alerts On' : 'Enable Lock Alerts'}
+              </span>
+            </button>
+
+            {/* Audible Chime Toggle & Test Button */}
+            <button
+              onClick={() => {
+                const nextState = !soundEnabled;
+                setSoundEnabled(nextState);
+                if (nextState) {
+                  playNotificationChime();
+                  showToast("Sound Alerts On", "Audible notification chime enabled.");
+                } else {
+                  showToast("Sound Muted", "Audible notification chime muted.");
+                }
+              }}
+              title="Toggle Audible Notification Chime"
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center space-x-1 ${
+                soundEnabled
+                  ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+              }`}>
+              {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              <span className="hidden sm:inline">{soundEnabled ? 'Sound On' : 'Muted'}</span>
+            </button>
+
             {/* Change My PIN Button */}
             <button
               onClick={() => {
@@ -929,7 +1129,7 @@ export default function App() {
               }}
               className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all flex items-center space-x-1.5">
               <Lock className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Change PIN</span>
+              <span className="hidden sm:inline">Change PIN</span>
             </button>
 
             {/* Notification Bell Dropdown */}
@@ -939,7 +1139,7 @@ export default function App() {
                 className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 relative transition-all">
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center animate-pulse">
                     {unreadCount}
                   </span>
                 )}
@@ -949,9 +1149,19 @@ export default function App() {
                 <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-50 space-y-3">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                     <span className="font-bold text-xs text-slate-800">Notifications</span>
-                    <button onClick={() => setShowNotifDropdown(false)} className="text-xs text-slate-400 hover:text-slate-600">
-                      Close
-                    </button>
+                    <div className="flex items-center space-x-3">
+                      <button
+                        onClick={() => {
+                          playNotificationChime();
+                          triggerSystemNotification("TaskFlow Test Alert", "Lock-screen banner and sound test.");
+                        }}
+                        className="text-[11px] text-indigo-600 font-semibold hover:underline">
+                        Test Alert
+                      </button>
+                      <button onClick={() => setShowNotifDropdown(false)} className="text-xs text-slate-400 hover:text-slate-600">
+                        Close
+                      </button>
+                    </div>
                   </div>
                   <div className="max-h-64 overflow-y-auto space-y-2">
                     {myNotifications.length === 0 ? (
@@ -984,7 +1194,7 @@ export default function App() {
               onClick={() => { setCurrentUser(null); setShowNotifDropdown(false); }}
               className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-semibold transition-all flex items-center space-x-1.5">
               <LogOut className="w-3.5 h-3.5" />
-              <span>Log Out</span>
+              <span className="hidden sm:inline">Log Out</span>
             </button>
           </div>
         </div>
