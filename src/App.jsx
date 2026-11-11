@@ -133,7 +133,7 @@ const TASK_PRESETS = [
     id: 'shippers',
     label: 'Shippers',
     title: 'Shippers',
-    description: 'Work all shippers from the warehouse maximising potential sales. Ensure all shippers are complete with Sels, upload picture of shipper area in the warehouse when done.'
+    description: 'Work all shippers from the warehouse maximising potential sales. Ensure all shippers are complete with SELs, upload photo of shipper area in the warehouse when done.'
   },
   {
     id: 'Euros',
