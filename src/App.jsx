@@ -13,8 +13,15 @@ import {
   deleteDoc,
   doc,
   setDoc,
-  onSnapshot
+  onSnapshot,
+  arrayUnion
 } from 'firebase/firestore';
+import {
+  getMessaging,
+  getToken,
+  onMessage,
+  isSupported
+} from 'firebase/messaging';
 import {
   CheckCircle,
   Clock,
@@ -54,6 +61,9 @@ const firebaseConfig = {
   measurementId: "G-VT8VQQ1HB0"
 };
 
+// YOUR FIREBASE WEB PUSH CERTIFICATE KEY PAIR (VAPID KEY):
+const VAPID_KEY = "BBlYEeyX10lSW1ur3PQxgTzgkc6S8BbgjYrOLRg8udfgc_rLSD71uTLXODoJEu_M1felLwMYmOwurNCeqGkVEg0";
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -61,16 +71,16 @@ const appId = "store-team-tasks-v1";
 
 // Default Seeded Team Structure: 1 Manager, 2 Team Leaders, 7 Colleagues
 const DEFAULT_USERS = [
-  { id: 'mgr-1', name: 'Lee (Manager)', role: 'manager', pin: '1234', color: 'bg-indigo-600' },
-  { id: 'tl-1', name: 'Team Leader 1', role: 'team_leader', pin: '1234', color: 'bg-violet-600' },
-  { id: 'tl-2', name: 'Team Leader 2', role: 'team_leader', pin: '1234', color: 'bg-purple-600' },
-  { id: 'col-1', name: 'Colleague 1', role: 'colleague', pin: '1234', color: 'bg-blue-600' },
-  { id: 'col-2', name: 'Colleague 2', role: 'colleague', pin: '1234', color: 'bg-emerald-600' },
-  { id: 'col-3', name: 'Colleague 3', role: 'colleague', pin: '1234', color: 'bg-amber-600' },
-  { id: 'col-4', name: 'Colleague 4', role: 'colleague', pin: '1234', color: 'bg-rose-600' },
-  { id: 'col-5', name: 'Colleague 5', role: 'colleague', pin: '1234', color: 'bg-cyan-600' },
-  { id: 'col-6', name: 'Colleague 6', role: 'colleague', pin: '1234', color: 'bg-teal-600' },
-  { id: 'col-7', name: 'Colleague 7', role: 'colleague', pin: '1234', color: 'bg-orange-600' }
+  { id: 'mgr-1', name: 'Lee (Manager)', role: 'manager', pin: '1234', color: 'bg-indigo-600', fcmTokens: [] },
+  { id: 'tl-1', name: 'Team Leader 1', role: 'team_leader', pin: '1234', color: 'bg-violet-600', fcmTokens: [] },
+  { id: 'tl-2', name: 'Team Leader 2', role: 'team_leader', pin: '1234', color: 'bg-purple-600', fcmTokens: [] },
+  { id: 'col-1', name: 'Colleague 1', role: 'colleague', pin: '1234', color: 'bg-blue-600', fcmTokens: [] },
+  { id: 'col-2', name: 'Colleague 2', role: 'colleague', pin: '1234', color: 'bg-emerald-600', fcmTokens: [] },
+  { id: 'col-3', name: 'Colleague 3', role: 'colleague', pin: '1234', color: 'bg-amber-600', fcmTokens: [] },
+  { id: 'col-4', name: 'Colleague 4', role: 'colleague', pin: '1234', color: 'bg-rose-600', fcmTokens: [] },
+  { id: 'col-5', name: 'Colleague 5', role: 'colleague', pin: '1234', color: 'bg-cyan-600', fcmTokens: [] },
+  { id: 'col-6', name: 'Colleague 6', role: 'colleague', pin: '1234', color: 'bg-teal-600', fcmTokens: [] },
+  { id: 'col-7', name: 'Colleague 7', role: 'colleague', pin: '1234', color: 'bg-orange-600', fcmTokens: [] }
 ];
 
 const AVATAR_COLORS = [
@@ -190,9 +200,7 @@ export default function App() {
 
   // Audible & System Lock-Screen Notification State
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [notifPermission, setNotifPermission] = useState(
-    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
-  );
+  const [fcmEnabled, setFcmEnabled] = useState(false);
   const prevUnreadCountRef = useRef(null);
 
   // Self-Service Change PIN Modal State
@@ -253,40 +261,74 @@ export default function App() {
     }, 4500);
   };
 
-  // Register Service Worker for Native Mobile Lock-Screen Notifications
+  // Register FCM Service Worker & Listen for Foreground Push Messages
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch((err) => {
-        console.log('Service worker registration skipped:', err);
-      });
-    }
-  }, []);
+    const setupForegroundMessaging = async () => {
+      try {
+        const supported = await isSupported();
+        if (!supported) return;
+        const messaging = getMessaging(app);
+        onMessage(messaging, (payload) => {
+          const title = payload.notification?.title || 'TaskFlow Alert';
+          const body = payload.notification?.body || '';
+          if (soundEnabled) playNotificationChime();
+          showToast(title, body);
+        });
+      } catch (err) {
+        console.log('Foreground FCM init skipped:', err);
+      }
+    };
+    setupForegroundMessaging();
+  }, [soundEnabled]);
 
-  // Request Native OS Lock-Screen Notification Permission
+  // Subscribe User Device to FCM Background Push Token
   const handleEnableLockScreenAlerts = async () => {
     if (typeof window === 'undefined' || !('Notification' in window)) {
       showToast(
         "Add to Home Screen First",
-        "On iPhone, tap Share then Add to Home Screen to enable lock-screen alerts."
+        "On iPhone, tap Share then Add to Home Screen to enable lock-screen push alerts."
       );
       return;
     }
 
     try {
       const permission = await Notification.requestPermission();
-      setNotifPermission(permission);
-      if (permission === 'granted') {
-        playNotificationChime();
-        await triggerSystemNotification(
-          "TaskFlow Lock-Screen Alerts Active",
-          "You will now receive system banners and chimes for new tasks and validations."
-        );
-        showToast("Lock Alerts Enabled", "System lock-screen notifications are now active.");
-      } else {
-        showToast("Permission Blocked", "Please allow notifications in your browser/phone settings.");
+      if (permission !== 'granted') {
+        showToast("Permission Blocked", "Please allow notifications in your phone/browser settings.");
+        return;
       }
+
+      playNotificationChime();
+
+      const supported = await isSupported();
+      if (supported && VAPID_KEY) {
+        const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        const messaging = getMessaging(app);
+        const currentToken = await getToken(messaging, {
+          vapidKey: VAPID_KEY,
+          serviceWorkerRegistration: swRegistration
+        });
+
+        if (currentToken && currentUser) {
+          const userDoc = doc(db, 'artifacts', appId, 'public', 'data', 'users', currentUser.id);
+          await updateDoc(userDoc, {
+            fcmTokens: arrayUnion(currentToken)
+          });
+          setFcmEnabled(true);
+          showToast("FCM Push Active", "Phone registered for lock-screen push notifications even when closed.");
+          return;
+        }
+      }
+
+      await triggerSystemNotification(
+        "Lock-Screen Alerts Enabled",
+        "System notifications are now active on this device."
+      );
+      setFcmEnabled(true);
+      showToast("Alerts Enabled", "Local lock-screen notifications enabled.");
     } catch (err) {
-      console.error("Notification permission error:", err);
+      console.error("FCM Token registration error:", err);
+      showToast("Push Setup Note", "Ensure firebase-messaging-sw.js is inside your public folder.");
     }
   };
 
@@ -358,6 +400,9 @@ export default function App() {
     const updatedProfile = teamUsers.find((u) => u.id === currentUser.id);
     if (updatedProfile) {
       setCurrentUser(updatedProfile);
+      if ((updatedProfile.fcmTokens || []).length > 0 && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        setFcmEnabled(true);
+      }
     }
   }, [teamUsers]);
 
@@ -396,7 +441,7 @@ export default function App() {
     prevUnreadCountRef.current = unreadCount;
   }, [unreadCount, currentUser?.id, soundEnabled]);
 
-  // Helper to push a real-time notification
+  // Helper to push a real-time notification AND dispatch hardware FCM background push via /api/send-push
   const sendNotification = async (targetUserId, targetRoleGroup, title, message) => {
     try {
       const notifsRef = collection(db, 'artifacts', appId, 'public', 'data', 'notifications');
@@ -408,6 +453,36 @@ export default function App() {
         readBy: [],
         createdAt: new Date().toISOString()
       });
+
+      // Collect registered FCM push tokens for target user(s)
+      let targetTokens = [];
+      if (targetUserId) {
+        const targetUser = teamUsers.find((u) => u.id === targetUserId);
+        if (targetUser && Array.isArray(targetUser.fcmTokens)) {
+          targetTokens.push(...targetUser.fcmTokens);
+        }
+      } else if (targetRoleGroup === 'supervisors') {
+        teamUsers
+          .filter((u) => u.role === 'manager' || u.role === 'team_leader')
+          .forEach((sup) => {
+            if (Array.isArray(sup.fcmTokens)) {
+              targetTokens.push(...sup.fcmTokens);
+            }
+          });
+      }
+
+      // Call Vercel Serverless Push API to wake closed browsers / locked phones
+      if (targetTokens.length > 0) {
+        fetch('/api/send-push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tokens: targetTokens,
+            title,
+            body: message
+          })
+        }).catch((err) => console.log('Background push dispatch skipped (local dev):', err));
+      }
     } catch (err) {
       console.error("Error sending notification:", err);
     }
@@ -720,7 +795,8 @@ export default function App() {
         name: newUserName.trim(),
         role: newUserRole,
         pin: newUserPin.trim(),
-        color: randomColor
+        color: randomColor,
+        fcmTokens: []
       });
       setNewUserName('');
       setNewUserPin('1234');
@@ -1084,18 +1160,18 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-2 sm:space-x-2.5">
-            {/* Native Lock-Screen Alerts Permission Button */}
+            {/* Native Lock-Screen FCM Push Permission Button */}
             <button
               onClick={handleEnableLockScreenAlerts}
-              title="Enable Phone Lock-Screen Notifications"
+              title="Enable Phone Lock-Screen Push Notifications"
               className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center space-x-1 ${
-                notifPermission === 'granted'
+                fcmEnabled
                   ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
                   : 'bg-amber-100 text-amber-900 hover:bg-amber-200'
               }`}>
               <BellRing className="w-3.5 h-3.5" />
               <span className="hidden md:inline">
-                {notifPermission === 'granted' ? 'Lock Alerts On' : 'Enable Lock Alerts'}
+                {fcmEnabled ? 'Lock Push Active' : 'Enable Lock Alerts'}
               </span>
             </button>
 
@@ -1921,6 +1997,11 @@ export default function App() {
                             <p className="font-bold text-sm text-slate-800">{u.name}</p>
                             <p className="text-xs text-slate-500 capitalize">
                               Role: {u.role.replace('_', ' ')} • PIN: <span className="font-mono font-semibold text-indigo-600">{u.pin || '1234'}</span>
+                              {(u.fcmTokens || []).length > 0 && (
+                                <span className="ml-2 px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px] font-semibold">
+                                  Push Linked
+                                </span>
+                              )}
                             </p>
                           </div>
                         </div>
