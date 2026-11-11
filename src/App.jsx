@@ -110,6 +110,16 @@ export default function App() {
   const [pinInput, setPinInput] = useState('');
   const [loginError, setLoginError] = useState('');
 
+  // Self-Service Change PIN Modal State
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [selfNewPin, setSelfNewPin] = useState('');
+
+  // Manager Inline User Edit State
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [editUserName, setEditUserName] = useState('');
+  const [editUserRole, setEditUserRole] = useState('colleague');
+  const [editUserPin, setEditUserPin] = useState('');
+
   // Navigation Tabs
   const [activeTab, setActiveTab] = useState('tasks');
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
@@ -220,13 +230,22 @@ export default function App() {
     };
   }, [fbUser]);
 
+  // Keep currentUser synced with live Firestore profile updates
+  useEffect(() => {
+    if (!currentUser) return;
+    const updatedProfile = teamUsers.find((u) => u.id === currentUser.id);
+    if (updatedProfile) {
+      setCurrentUser(updatedProfile);
+    }
+  }, [teamUsers]);
+
   // Helper to push a real-time notification
   const sendNotification = async (targetUserId, targetRoleGroup, title, message) => {
     try {
       const notifsRef = collection(db, 'artifacts', appId, 'public', 'data', 'notifications');
       await addDoc(notifsRef, {
         targetUserId: targetUserId || null,
-        targetRoleGroup: targetRoleGroup || null, // 'supervisors' notifies Manager + Team Leaders
+        targetRoleGroup: targetRoleGroup || null,
         title,
         message,
         readBy: [],
@@ -248,7 +267,52 @@ export default function App() {
       setLoginError('');
       setActiveTab('tasks');
     } else {
-      setLoginError('Incorrect PIN. (Default PIN is 1234)');
+      setLoginError('Incorrect PIN. Please try again.');
+    }
+  };
+
+  // Handle Self-Service PIN Change (For Any Logged-in User)
+  const handleSelfPinChange = async (e) => {
+    e.preventDefault();
+    if (!currentUser || !selfNewPin.trim()) return;
+
+    try {
+      const userDoc = doc(db, 'artifacts', appId, 'public', 'data', 'users', currentUser.id);
+      await updateDoc(userDoc, {
+        pin: selfNewPin.trim()
+      });
+      setShowPinModal(false);
+      setSelfNewPin('');
+      showToast("PIN Updated", "Your new login PIN has been saved.");
+    } catch (err) {
+      console.error("Error updating PIN:", err);
+      showToast("Error", "Could not update PIN.");
+    }
+  };
+
+  // Start Editing a User in Manager Roster
+  const startEditUser = (u) => {
+    setEditingUserId(u.id);
+    setEditUserName(u.name);
+    setEditUserRole(u.role);
+    setEditUserPin(u.pin || '1234');
+  };
+
+  // Save Edited User Details & PIN (Manager Only)
+  const handleSaveEditUser = async (userId) => {
+    if (!editUserName.trim() || !editUserPin.trim()) return;
+    try {
+      const userDoc = doc(db, 'artifacts', appId, 'public', 'data', 'users', userId);
+      await updateDoc(userDoc, {
+        name: editUserName.trim(),
+        role: editUserRole,
+        pin: editUserPin.trim()
+      });
+      setEditingUserId(null);
+      showToast("Profile Updated", `Saved changes and PIN for ${editUserName.trim()}.`);
+    } catch (err) {
+      console.error("Error editing user:", err);
+      showToast("Error", "Could not update user profile.");
     }
   };
 
@@ -554,7 +618,7 @@ export default function App() {
               <Layers className="w-7 h-7 text-white" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight">TaskFlow Team Portal</h1>
-            <p className="text-xs text-indigo-200">Select your name below to log into your private workspace (Default PIN: 1234)</p>
+            <p className="text-xs text-indigo-200">Select your name below to log into your private workspace</p>
           </div>
 
           {/* PIN Login Modal */}
@@ -577,7 +641,7 @@ export default function App() {
 
               <form onSubmit={handleLoginSubmit} className="space-y-3">
                 <div>
-                  <label className="block text-xs text-indigo-200 mb-1">Enter 4-Digit Security PIN</label>
+                  <label className="block text-xs text-indigo-200 mb-1">Enter Security PIN</label>
                   <input
                     type="password"
                     autoFocus
@@ -623,7 +687,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* 2 Team Leaders */}
+            {/* Team Leaders */}
             <div className="space-y-2">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-300 block">Team Leaders ({teamLeaders.length})</span>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -647,7 +711,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* 7 Colleagues */}
+            {/* Colleagues */}
             <div className="space-y-2">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-300 block">Colleagues ({colleagues.length})</span>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
@@ -679,15 +743,12 @@ export default function App() {
   const isSupervisor = currentUser.role === 'manager' || currentUser.role === 'team_leader';
   const isManager = currentUser.role === 'manager';
 
-  // Who can the current supervisor assign tasks to?
-  // Manager -> Team Leaders & Colleagues. Team Leaders -> Colleagues.
   const assignableUsers = teamUsers.filter((u) => {
     if (isManager) return u.role === 'team_leader' || u.role === 'colleague';
     if (currentUser.role === 'team_leader') return u.role === 'colleague';
     return false;
   });
 
-  // Tasks filtered by role
   const myAssignedTasks = tasks.filter((t) => t.assigneeId === currentUser.id && t.status === 'active');
   const myPendingTasks = tasks.filter((t) => t.assigneeId === currentUser.id && t.status === 'pending_validation');
   const myArchivedTasks = tasks.filter((t) => t.assigneeId === currentUser.id && t.status === 'archived');
@@ -696,15 +757,12 @@ export default function App() {
   const allPendingTasks = tasks.filter((t) => t.status === 'pending_validation');
   const allArchivedTasks = tasks.filter((t) => t.status === 'archived');
 
-  // Notifications for this user
   const myNotifications = notifications.filter((n) => {
     if (n.targetUserId === currentUser.id) return true;
     if (n.targetRoleGroup === 'supervisors' && isSupervisor) return true;
     return false;
   });
   const unreadCount = myNotifications.filter((n) => !(n.readBy || []).includes(currentUser.id)).length;
-
-  // Pending Manager Requests count
   const pendingRequestsCount = requests.filter((r) => r.status === 'pending').length;
 
   return (
@@ -728,6 +786,54 @@ export default function App() {
           onClick={() => setLightboxImage(null)}
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-pointer">
           <img src={lightboxImage} alt="Task attachment" className="max-w-full max-h-[90vh] rounded-2xl shadow-2xl" />
+        </div>
+      )}
+
+      {/* Self-Service Change PIN Modal (Available to Any Logged-in User) */}
+      {showPinModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center space-x-2">
+                <Lock className="w-4 h-4 text-indigo-600" />
+                <h3 className="font-bold text-slate-900 text-base">Change My Login PIN</h3>
+              </div>
+              <button onClick={() => setShowPinModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSelfPinChange} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                  Current PIN: <span className="font-mono text-indigo-600">{currentUser.pin || '1234'}</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={selfNewPin}
+                  onChange={(e) => setSelfNewPin(e.target.value)}
+                  placeholder="Enter new PIN (e.g. 5678)"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPinModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold">
+                  Save New PIN
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -814,7 +920,18 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3">
+            {/* Change My PIN Button */}
+            <button
+              onClick={() => {
+                setSelfNewPin(currentUser.pin || '1234');
+                setShowPinModal(true);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all flex items-center space-x-1.5">
+              <Lock className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Change PIN</span>
+            </button>
+
             {/* Notification Bell Dropdown */}
             <div className="relative">
               <button
@@ -1512,7 +1629,7 @@ export default function App() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Login PIN</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Initial Login PIN</label>
                   <input
                     type="text"
                     required
@@ -1532,28 +1649,89 @@ export default function App() {
             </div>
 
             <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
-              <h2 className="font-bold text-slate-900 text-base">Current Team Roster ({teamUsers.length})</h2>
+              <div>
+                <h2 className="font-bold text-slate-900 text-base">Current Team Roster ({teamUsers.length})</h2>
+                <p className="text-xs text-slate-500">Click Edit / PIN on any user to update their name, role, or security PIN.</p>
+              </div>
+
               <div className="divide-y divide-slate-100">
                 {teamUsers.map((u) => (
-                  <div key={u.id} className="py-3 flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className={`w-9 h-9 rounded-xl ${u.color || 'bg-indigo-600'} text-white font-bold flex items-center justify-center text-xs`}>
-                        {u.name[0]}
+                  <div key={u.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    {editingUserId === u.id ? (
+                      <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2 bg-indigo-50/60 p-3 rounded-xl border border-indigo-200">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Name</label>
+                          <input
+                            type="text"
+                            value={editUserName}
+                            onChange={(e) => setEditUserName(e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Role</label>
+                          <select
+                            value={editUserRole}
+                            onChange={(e) => setEditUserRole(e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white">
+                            <option value="colleague">Colleague</option>
+                            <option value="team_leader">Team Leader</option>
+                            <option value="manager">Manager</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Login PIN</label>
+                          <div className="flex items-center space-x-1.5">
+                            <input
+                              type="text"
+                              value={editUserPin}
+                              onChange={(e) => setEditUserPin(e.target.value)}
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-mono bg-white"
+                            />
+                            <button
+                              onClick={() => handleSaveEditUser(u.id)}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shrink-0">
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingUserId(null)}
+                              className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-semibold shrink-0">
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-bold text-sm text-slate-800">{u.name}</p>
-                        <p className="text-xs text-slate-500 capitalize">
-                          Role: {u.role.replace('_', ' ')} • PIN: <span className="font-mono">{u.pin || '1234'}</span>
-                        </p>
-                      </div>
-                    </div>
-                    {u.id !== currentUser.id && (
-                      <button
-                        onClick={() => handleDeleteUser(u)}
-                        className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                        title="Delete User">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    ) : (
+                      <>
+                        <div className="flex items-center space-x-3">
+                          <div className={`w-9 h-9 rounded-xl ${u.color || 'bg-indigo-600'} text-white font-bold flex items-center justify-center text-xs`}>
+                            {u.name[0]}
+                          </div>
+                          <div>
+                            <p className="font-bold text-sm text-slate-800">{u.name}</p>
+                            <p className="text-xs text-slate-500 capitalize">
+                              Role: {u.role.replace('_', ' ')} • PIN: <span className="font-mono font-semibold text-indigo-600">{u.pin || '1234'}</span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => startEditUser(u)}
+                            className="px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all flex items-center space-x-1">
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>Edit / PIN</span>
+                          </button>
+                          {u.id !== currentUser.id && (
+                            <button
+                              onClick={() => handleDeleteUser(u)}
+                              className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                              title="Delete User">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </>
                     )}
                   </div>
                 ))}
