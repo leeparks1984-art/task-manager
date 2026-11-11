@@ -999,7 +999,7 @@ export default function App() {
                       </div>
                       <div className="text-left">
                         <h3 className="font-bold text-sm">{u.name}</h3>
-                        <p className="text-[11px] text-indigo-200">Full Store Oversight, Validation & User Admin</p>
+                        <p className="text-[11px] text-indigo-200">Ambient Oversight, Validation & User Admin</p>
                       </div>
                     </div>
                     <ArrowRight className="w-4 h-4 text-indigo-200 group-hover:translate-x-1 transition-transform" />
