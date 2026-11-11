@@ -700,7 +700,6 @@ export default function App() {
       const updatedDescription = `${delegatingTask.description || ''}${extraNote}`.trim();
 
       if (targetColleagues.length === 1) {
-        // Reassign the existing task document directly to the single chosen colleague
         const target = targetColleagues[0];
         const taskDoc = doc(db, 'artifacts', appId, 'public', 'data', 'tasks', delegatingTask.id);
         await updateDoc(taskDoc, {
@@ -719,7 +718,6 @@ export default function App() {
           `${currentUser.name} assigned "${delegatingTask.title}" to you.`
         );
       } else {
-        // Multiple colleagues selected: create an individual task copy for each colleague and remove the original TL placeholder
         const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
         for (const target of targetColleagues) {
           await addDoc(tasksRef, {
@@ -750,7 +748,6 @@ export default function App() {
           );
         }
 
-        // Remove original task from Team Leader's personal queue now that it has been split out to colleagues
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tasks', delegatingTask.id));
       }
 
@@ -794,6 +791,16 @@ export default function App() {
     }
   };
 
+  // Delete an Active Task (Supervisor Only)
+  const handleDeleteTask = async (task) => {
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tasks', task.id));
+      showToast("Task Deleted", `Removed "${task.title}".`);
+    } catch (err) {
+      console.error("Delete task error:", err);
+    }
+  };
+
   // Submit Task Completion with Photo & Comment
   const handleConfirmCompletion = async (e) => {
     e.preventDefault();
@@ -824,24 +831,34 @@ export default function App() {
     }
   };
 
-  // Validate & Archive Task
+  // Validate & Archive Task (Works for Pending Validation AND Direct Supervisor Validation of Active Tasks)
   const handleValidateTask = async (task) => {
     try {
+      const nowIso = new Date().toISOString();
+      const isDirectSupervisorSignOff = task.status === 'active';
       const taskDoc = doc(db, 'artifacts', appId, 'public', 'data', 'tasks', task.id);
+
       await updateDoc(taskDoc, {
         status: 'archived',
+        completedAt: task.completedAt || nowIso,
+        completionNote:
+          task.completionNote ||
+          (isDirectSupervisorSignOff ? `Validated directly by ${currentUser.name}` : ''),
         validatedByName: currentUser.name,
-        validatedAt: new Date().toISOString()
+        validatedAt: nowIso
       });
 
       await sendNotification(
         task.assigneeId,
         null,
-        'Task Validated',
+        'Task Validated & Cleared',
         `${currentUser.name} validated and archived "${task.title}".`
       );
 
-      showToast("Task Validated", "Moved to the archived log.");
+      showToast(
+        isDirectSupervisorSignOff ? "Validated Directly" : "Task Validated",
+        `"${task.title}" cleared from ${task.assigneeName}'s list and archived.`
+      );
     } catch (err) {
       console.error("Error validating task:", err);
     }
@@ -1141,7 +1158,7 @@ export default function App() {
                       </div>
                       <div className="text-left">
                         <h3 className="font-bold text-sm">{u.name}</h3>
-                        <p className="text-[11px] text-indigo-200">Ambient Oversight, Validation & User Admin</p>
+                        <p className="text-[11px] text-indigo-200">Full Store Oversight, Validation & User Admin</p>
                       </div>
                     </div>
                     <ArrowRight className="w-4 h-4 text-indigo-200 group-hover:translate-x-1 transition-transform" />
@@ -1949,11 +1966,18 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Active Team Workload */}
+                {/* Active Team Workload (With Direct Supervisor Validation & Reassignment) */}
                 <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
-                  <div className="flex items-center space-x-3 pb-3 border-b border-slate-100">
-                    <Users className="w-5 h-5 text-blue-600" />
-                    <h2 className="font-bold text-slate-900 text-base">Active Team Workload</h2>
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div className="flex items-center space-x-3">
+                      <Users className="w-5 h-5 text-blue-600" />
+                      <div>
+                        <h2 className="font-bold text-slate-900 text-base">Active Team Workload</h2>
+                        <p className="text-xs text-slate-500">
+                          You can reassign tasks or click Validate directly if a colleague forgot to mark theirs complete.
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1975,33 +1999,53 @@ export default function App() {
                               {memberActive.length} Active
                             </span>
                           </div>
-                          <div className="space-y-2">
+                          <div className="space-y-2.5">
                             {memberActive.length === 0 ? (
                               <p className="text-xs text-slate-400 italic">No active tasks.</p>
                             ) : (
                               memberActive.map((t) => (
-                                <div key={t.id} className="bg-white p-2.5 rounded-lg border border-slate-200 text-xs space-y-2">
-                                  <div>
-                                    <p className="font-semibold text-slate-800">{t.title}</p>
-                                    <p className="text-slate-500 text-[11px] whitespace-pre-line">{t.description}</p>
-                                    {t.delegatedByName && (
-                                      <span className="inline-block mt-1 px-1.5 py-0.5 bg-violet-50 text-violet-700 rounded text-[10px] font-semibold">
-                                        Delegated by {t.delegatedByName}
-                                      </span>
-                                    )}
+                                <div key={t.id} className="bg-white p-3 rounded-xl border border-slate-200 text-xs space-y-2.5 shadow-2xs">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                      <p className="font-bold text-slate-800">{t.title}</p>
+                                      <p className="text-slate-500 text-[11px] whitespace-pre-line mt-0.5">{t.description}</p>
+                                      {t.delegatedByName && (
+                                        <span className="inline-block mt-1 px-1.5 py-0.5 bg-violet-50 text-violet-700 rounded text-[10px] font-semibold">
+                                          Delegated by {t.delegatedByName}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <button
+                                      onClick={() => handleDeleteTask(t)}
+                                      title="Delete Task"
+                                      className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-all shrink-0">
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
                                   </div>
-                                  <div className="flex items-center justify-between pt-1.5 border-t border-slate-100">
-                                    <span className="text-[10px] font-semibold text-slate-400">Reassign to:</span>
-                                    <select
-                                      value={t.assigneeId}
-                                      onChange={(e) => handleQuickReassign(t, e.target.value)}
-                                      className="text-[11px] bg-slate-50 border border-slate-200 rounded-md px-2 py-0.5 text-slate-700 font-medium">
-                                      {assignableUsers.map((u) => (
-                                        <option key={u.id} value={u.id}>
-                                          {u.name}
-                                        </option>
-                                      ))}
-                                    </select>
+
+                                  {/* Direct Supervisor Validate Button & Reassign Dropdown */}
+                                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                                    <div className="flex items-center space-x-1.5">
+                                      <span className="text-[10px] font-semibold text-slate-400">Move:</span>
+                                      <select
+                                        value={t.assigneeId}
+                                        onChange={(e) => handleQuickReassign(t, e.target.value)}
+                                        className="text-[11px] bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-700 font-medium">
+                                        {assignableUsers.map((u) => (
+                                          <option key={u.id} value={u.id}>
+                                            {u.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+
+                                    <button
+                                      onClick={() => handleValidateTask(t)}
+                                      title="Validate and archive directly on behalf of colleague"
+                                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-[11px] flex items-center space-x-1 shadow-2xs transition-all">
+                                      <Check className="w-3.5 h-3.5" />
+                                      <span>Validate & Archive</span>
+                                    </button>
                                   </div>
                                 </div>
                               ))
@@ -2091,7 +2135,7 @@ export default function App() {
                     </h3>
                     {currentUser.role === 'team_leader' && (
                       <p className="text-xs text-slate-500">
-                        You can complete these yourself or reassign/delegate them to one or more colleagues.
+                        You can complete these yourself, validate them directly, or reassign them to colleagues.
                       </p>
                     )}
                   </div>
