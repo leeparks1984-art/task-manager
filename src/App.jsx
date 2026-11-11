@@ -46,7 +46,8 @@ import {
   Lock,
   Volume2,
   VolumeX,
-  Share2
+  Share2,
+  ClipboardList
 } from 'lucide-react';
 
 // ==========================================
@@ -70,6 +71,64 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = "store-team-tasks-v1";
 const SESSION_STORAGE_KEY = "taskflow_saved_user_v1";
+
+// Standard Repetitive Task Presets & Expectations
+const TASK_PRESETS = [
+  {
+    id: 'custom',
+    label: 'Custom (Type Your Own)',
+    title: '',
+    description: ''
+  },
+  {
+    id: 'waste',
+    label: 'Waste',
+    title: 'Waste',
+    description: 'Process all damages, splits, and out-of-date stock. Scan everything accurately, clear the waste cages/area, and upload a photo of the cleared area.'
+  },
+  {
+    id: 'drop_tops',
+    label: 'Drop Tops',
+    title: 'Drop Tops',
+    description: 'Pull down top-stock across the assigned aisles to fill shelf gaps, face up as you go, update any capacity issues, and upload a photo of the completed bays.'
+  },
+  {
+    id: 'gifting',
+    label: 'Gifting',
+    title: 'Gifting',
+    description: 'Replenish and dress the seasonal/gifting bays, ensure all price labels are present and aligned, remove empty cardboard, and upload a photo of the finished display.'
+  },
+  {
+    id: 'hb',
+    label: 'H&B',
+    title: 'H&B',
+    description: 'Work Health & Beauty delivery/backstock, check security tags on high-value lines, face up shelves, and upload a photo of completed bays.'
+  },
+  {
+    id: 'horseshoe',
+    label: 'Horseshoe',
+    title: 'Horseshoe',
+    description: 'Work and replenish the Horseshoe area, keep promotional lines topped up and faced, clear all rubbish, and upload a photo of the finished section.'
+  },
+  {
+    id: 'modular_compliance',
+    label: 'Modular Compliance',
+    title: 'Modular Compliance',
+    description: 'Relay/check bays against the current modular plan, ensure all SELs/ESLs are aligned to the left edge and match product facings, and upload a clear photo of the bay.'
+  },
+  {
+    id: 'camera_tasks',
+    label: 'Camera Tasks',
+    title: 'Camera Tasks',
+    description: 'Action the latest overhead camera gap/stock alerts, replenish or zero-check flagged lines, and upload a photo of the resolved bays.'
+  },
+  {
+    id: 'promo',
+    label: 'Promo',
+    title: 'Promo',
+    description: 'Replenish promotional end-caps and features, verify correct promotional barkers/POS are displayed, face up stock, and upload a photo of the end-cap.'
+  }
+];
 
 // Default Seeded Team Structure: 1 Manager, 2 Team Leaders, 7 Colleagues
 const DEFAULT_USERS = [
@@ -232,7 +291,8 @@ export default function App() {
   const [requests, setRequests] = useState([]);
   const [notifications, setNotifications] = useState([]);
 
-  // New Task Form State (Manager / Team Leader - Supports Multiple Assignees)
+  // New Task Form State (Manager / Team Leader - Supports Presets & Multiple Assignees)
+  const [selectedPreset, setSelectedPreset] = useState('custom');
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
   const [taskAssigneeIds, setTaskAssigneeIds] = useState([]);
@@ -273,6 +333,16 @@ export default function App() {
     setTimeout(() => {
       setToast((prev) => ({ ...prev, show: false }));
     }, 4500);
+  };
+
+  // Handle Selecting a Repetitive Task Preset
+  const handleSelectPreset = (presetId) => {
+    setSelectedPreset(presetId);
+    const found = TASK_PRESETS.find((p) => p.id === presetId);
+    if (found) {
+      setTaskTitle(found.title);
+      setTaskDesc(found.description);
+    }
   };
 
   // Register FCM Service Worker & Listen for Foreground Push Messages
@@ -669,6 +739,7 @@ export default function App() {
       }
 
       const assignedNames = selectedUsers.map((u) => u.name).join(', ');
+      setSelectedPreset('custom');
       setTaskTitle('');
       setTaskDesc('');
       setTaskAssigneeIds([]);
@@ -1727,7 +1798,7 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Assign Task Form with Multi-Select Checklist & Reference Photo */}
+              {/* Assign Task Form with Presets, Multi-Select Checklist & Reference Photo */}
               <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-5">
                 <div className="flex items-center space-x-3 pb-3 border-b border-slate-100">
                   <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
@@ -1737,25 +1808,71 @@ export default function App() {
                 </div>
 
                 <form onSubmit={handleCreateTask} className="space-y-4">
+                  {/* Repetitive Task Preset Selector (Dropdown + Quick Tap Pills) */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold text-slate-600 uppercase">
+                      Quick Task Preset (Auto-Fills Expectations)
+                    </label>
+                    <select
+                      value={selectedPreset}
+                      onChange={(e) => handleSelectPreset(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-slate-50 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                      {TASK_PRESETS.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {preset.label}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Quick-Tap Department Pills */}
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {TASK_PRESETS.filter((p) => p.id !== 'custom').map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => handleSelectPreset(preset.id)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                            selectedPreset === preset.id
+                              ? 'bg-indigo-600 text-white shadow-2xs'
+                              : 'bg-slate-100 text-slate-700 hover:bg-indigo-50 hover:text-indigo-700'
+                          }`}>
+                          {preset.label}
+                        </button>
+                      ))}
+                      {selectedPreset !== 'custom' && (
+                        <button
+                          type="button"
+                          onClick={() => handleSelectPreset('custom')}
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all">
+                          Clear / Custom
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Task Title</label>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                      Task Title (Editable)
+                    </label>
                     <input
                       type="text"
                       required
                       value={taskTitle}
                       onChange={(e) => setTaskTitle(e.target.value)}
-                      placeholder="e.g. End-Cap Promotional Restock"
+                      placeholder="e.g. Drop Tops - Aisles 4 to 6"
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Instructions / Manager Comments</label>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                      Standard Expectations / Manager Comments
+                    </label>
                     <textarea
-                      rows="3"
+                      rows="4"
                       required
                       value={taskDesc}
                       onChange={(e) => setTaskDesc(e.target.value)}
-                      placeholder="Add specific details or expectations..."
+                      placeholder="Select a preset above or type custom task expectations..."
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
