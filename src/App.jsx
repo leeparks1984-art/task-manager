@@ -1419,7 +1419,7 @@ export default function App() {
             <div className="w-14 h-14 bg-gradient-to-tr from-indigo-500 to-violet-500 rounded-2xl mx-auto flex items-center justify-center shadow-lg shadow-indigo-500/30">
               <Layers className="w-7 h-7 text-white"/>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight">TaskFlow Team Portal</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Ambient Team Portal</h1>
             <p className="text-xs text-indigo-200">Select your name below to log into your private workspace</p>
           </div>
 
@@ -1968,7 +1968,7 @@ export default function App() {
               <Layers className="w-5 h-5"/>
             </div>
             <div>
-              <h1 className="font-bold text-base text-slate-900 leading-tight">TaskFlow Pro</h1>
+              <h1 className="font-bold text-base text-slate-900 leading-tight">Ambient Team Portal</h1>
               <p className="text-[11px] text-slate-500 font-medium capitalize">
                 {currentUser.name} • {currentUser.role.replace('_', ' ')}
               </p>
