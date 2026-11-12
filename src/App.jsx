@@ -53,7 +53,9 @@ import {
   AlertTriangle,
   QrCode,
   Eye,
-  EyeOff
+  EyeOff,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 // ==========================================
@@ -320,6 +322,18 @@ export default function App() {
   // Navigation Tabs
   const [activeTab, setActiveTab] = useState('tasks');
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+
+  // Collapsible Supervisor Dashboard Card States
+  const [openCards, setOpenCards] = useState({
+    reassigned: true,
+    validation: true,
+    inProgress: true,
+    allocated: false
+  });
+
+  const toggleCard = (key) => {
+    setOpenCards((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   // Firestore Collections State
   const [teamUsers, setTeamUsers] = useState([]);
@@ -1419,7 +1433,7 @@ export default function App() {
             <div className="w-14 h-14 bg-gradient-to-tr from-indigo-500 to-violet-500 rounded-2xl mx-auto flex items-center justify-center shadow-lg shadow-indigo-500/30">
               <Layers className="w-7 h-7 text-white"/>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight">Ambient Team Portal</h1>
+            <h1 className="text-2xl font-bold tracking-tight">TaskFlow Team Portal</h1>
             <p className="text-xs text-indigo-200">Select your name below to log into your private workspace</p>
           </div>
 
@@ -1560,8 +1574,15 @@ export default function App() {
   const myPendingTasks = tasks.filter((t) => t.assigneeId === currentUser.id && t.status === 'pending_validation');
   const myArchivedTasks = tasks.filter((t) => t.assigneeId === currentUser.id && t.status === 'archived');
 
+  // Supervisor Filtered Buckets for the 4 Collapsible Cards
   const allActiveTasks = sortTasksByPriorityAndDate(tasks.filter((t) => t.status === 'active'));
-  const allIncompleteTasks = allActiveTasks.filter((t) => t.progressStatus === 'incomplete');
+  const waitingReassignOrPausedTasks = allActiveTasks.filter(
+    (t) => t.progressStatus === 'incomplete' || t.progressStatus === 'paused'
+  );
+  const inProgressTasks = allActiveTasks.filter((t) => t.progressStatus === 'in_progress');
+  const allocatedNotStartedTasks = allActiveTasks.filter(
+    (t) => !t.progressStatus || t.progressStatus === 'not_started'
+  );
   const allPendingTasks = tasks.filter((t) => t.status === 'pending_validation');
   const allArchivedTasks = tasks.filter((t) => t.status === 'archived');
 
@@ -1968,7 +1989,7 @@ export default function App() {
               <Layers className="w-5 h-5"/>
             </div>
             <div>
-              <h1 className="font-bold text-base text-slate-900 leading-tight">Ambient Team Portal</h1>
+              <h1 className="font-bold text-base text-slate-900 leading-tight">TaskFlow Pro</h1>
               <p className="text-[11px] text-slate-500 font-medium capitalize">
                 {currentUser.name} • {currentUser.role.replace('_', ' ')}
               </p>
@@ -2166,97 +2187,60 @@ export default function App() {
         {/* ================= SUPERVISOR TASK BOARD (MANAGER & TEAM LEADERS) ================= */}
         {activeTab === 'tasks' && isSupervisor && (
           <div className="space-y-8">
-            {/* Summary Row */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div className="bg-white rounded-2xl p-5 border border-slate-200 flex items-center justify-between">
+            {/* Interactive Top Summary Row (Tapping a card toggles the matching collapsible section) */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <button
+                type="button"
+                onClick={() => toggleCard('reassigned')}
+                className="bg-white hover:bg-orange-50/40 text-left rounded-2xl p-4 sm:p-5 border border-slate-200 flex items-center justify-between transition-all">
                 <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase">Active Team Tasks</p>
-                  <h3 className="text-2xl font-bold text-slate-800 mt-1">
-                    {allActiveTasks.length}{' '}
-                    <span className="text-xs font-semibold text-blue-600">
-                      ({allActiveTasks.filter((t) => t.progressStatus === 'in_progress').length} Working)
-                    </span>
-                  </h3>
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase">Waiting Reassign / Paused</p>
+                  <h3 className="text-2xl font-bold text-orange-600 mt-1">{waitingReassignOrPausedTasks.length}</h3>
                 </div>
-                <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                  <Clock className="w-5 h-5"/>
+                <div className="w-10 h-10 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5"/>
                 </div>
-              </div>
+              </button>
 
-              <div className="bg-white rounded-2xl p-5 border border-slate-200 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => toggleCard('validation')}
+                className="bg-white hover:bg-amber-50/40 text-left rounded-2xl p-4 sm:p-5 border border-slate-200 flex items-center justify-between transition-all">
                 <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase">Paused / Handover</p>
-                  <h3 className="text-2xl font-bold text-orange-600 mt-1">
-                    {allActiveTasks.filter((t) => t.progressStatus === 'paused' || t.progressStatus === 'incomplete').length}
-                  </h3>
-                </div>
-                <div className="w-11 h-11 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center">
-                  <Pause className="w-5 h-5"/>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl p-5 border border-slate-200 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase">Pending Validation</p>
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase">Waiting Validation</p>
                   <h3 className="text-2xl font-bold text-amber-600 mt-1">{allPendingTasks.length}</h3>
                 </div>
-                <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
                   <Bell className="w-5 h-5"/>
                 </div>
-              </div>
+              </button>
 
-              <div className="bg-white rounded-2xl p-5 border border-slate-200 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => toggleCard('inProgress')}
+                className="bg-white hover:bg-blue-50/40 text-left rounded-2xl p-4 sm:p-5 border border-slate-200 flex items-center justify-between transition-all">
                 <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase">Validated & Archived</p>
-                  <h3 className="text-2xl font-bold text-emerald-600 mt-1">{allArchivedTasks.length}</h3>
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase">In Progress Now</p>
+                  <h3 className="text-2xl font-bold text-blue-600 mt-1">{inProgressTasks.length}</h3>
                 </div>
-                <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                  <Archive className="w-5 h-5"/>
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                  <Play className="w-5 h-5"/>
                 </div>
-              </div>
-            </div>
+              </button>
 
-            {/* Alert Banner if Any Colleague Flagged an Incomplete Task for Handover */}
-            {allIncompleteTasks.length > 0 && (
-              <div className="bg-orange-50 border-2 border-orange-300 rounded-2xl p-5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2.5">
-                    <AlertTriangle className="w-5 h-5 text-orange-600"/>
-                    <h3 className="font-bold text-slate-900 text-sm">
-                      Incomplete Tasks Needing Reassignment ({allIncompleteTasks.length})
-                    </h3>
-                  </div>
-                  <span className="text-xs font-semibold text-orange-800">Action Required</span>
+              <button
+                type="button"
+                onClick={() => toggleCard('allocated')}
+                className="bg-white hover:bg-slate-100 text-left rounded-2xl p-4 sm:p-5 border border-slate-200 flex items-center justify-between transition-all">
+                <div>
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase">Allocated (Not Started)</p>
+                  <h3 className="text-2xl font-bold text-slate-800 mt-1">{allocatedNotStartedTasks.length}</h3>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {allIncompleteTasks.map((t) => (
-                    <div key={t.id} className="bg-white p-4 rounded-xl border border-orange-200 flex flex-col justify-between gap-3">
-                      <div>
-                        <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded text-[10px] font-bold uppercase">
-                          Started by {t.assigneeName} — Incomplete
-                        </span>
-                        <h4 className="font-bold text-slate-900 text-sm mt-1">{t.title}</h4>
-                        <p className="text-xs text-orange-900 font-medium mt-1">
-                          Handover Note: "{t.handoverNote || 'Not completed before leaving task'}"
-                        </p>
-                      </div>
-                      <div className="flex items-center justify-end space-x-2">
-                        <button
-                          onClick={() => {
-                            setDelegatingTask(t);
-                            setDelegateTargetIds([]);
-                            setDelegateNote(t.handoverNote ? `Handover from ${t.assigneeName}: ${t.handoverNote}` : '');
-                          }}
-                          className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-semibold flex items-center space-x-1.5">
-                          <Share2 className="w-3.5 h-3.5"/>
-                          <span>Reassign to Finish</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                  <Clock className="w-5 h-5"/>
                 </div>
-              </div>
-            )}
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* Assign Task Form with Presets, Priority Toggle, Multi-Select Checklist & Reference Photo */}
@@ -2466,296 +2450,498 @@ export default function App() {
                 </form>
               </div>
 
-              {/* Validation Queue & Active Team Board */}
-              <div className="lg:col-span-2 space-y-8">
-                {/* Pending Validation Queue */}
-                <div className="bg-amber-50/70 rounded-2xl p-6 border border-amber-200 space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-amber-200">
-                    <div>
-                      <h2 className="font-bold text-slate-900 text-base">Pending Remote Validation</h2>
-                      <p className="text-xs text-amber-800">Inspect colleague completion photos and notes before archiving.</p>
+              {/* 4 Collapsible Supervisor Status Cards */}
+              <div className="lg:col-span-2 space-y-5">
+                {/* CARD 1: WAITING TO BE REASSIGNED / PAUSED */}
+                <div className="bg-orange-50/70 rounded-2xl border border-orange-200 overflow-hidden shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => toggleCard('reassigned')}
+                    className="w-full p-5 flex items-center justify-between text-left hover:bg-orange-100/50 transition-all">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-9 h-9 rounded-xl bg-orange-500 text-white flex items-center justify-center shrink-0">
+                        <AlertTriangle className="w-5 h-5"/>
+                      </div>
+                      <div>
+                        <h2 className="font-bold text-slate-900 text-base">Waiting to be Reassigned / Paused</h2>
+                        <p className="text-xs text-orange-800">
+                          Incomplete shift handovers and paused tasks needing supervisor attention.
+                        </p>
+                      </div>
                     </div>
-                    <span className="px-2.5 py-1 bg-amber-200 text-amber-900 rounded-full text-xs font-bold">
-                      {allPendingTasks.length} Pending
-                    </span>
-                  </div>
-
-                  {allPendingTasks.length === 0 ? (
-                    <div className="text-center py-6 text-slate-400 text-xs italic">
-                      <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2"/>
-                      No completed tasks waiting for validation.
+                    <div className="flex items-center space-x-2.5 shrink-0">
+                      <span className="px-3 py-1 bg-orange-200 text-orange-950 rounded-full text-xs font-bold">
+                        {waitingReassignOrPausedTasks.length}
+                      </span>
+                      {openCards.reassigned ? (
+                        <ChevronUp className="w-5 h-5 text-orange-800"/>
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-orange-800"/>
+                      )}
                     </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {allPendingTasks.map((t) => (
-                        <div key={t.id} className="bg-white p-5 rounded-xl border border-amber-200 shadow-xs space-y-4">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <div>
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                {t.priority === 'urgent' && (
-                                  <span className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-bold uppercase flex items-center space-x-1">
-                                    <Flame className="w-3 h-3"/>
-                                    <span>Priority</span>
-                                  </span>
-                                )}
-                                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[11px] font-semibold">
-                                  Completed by {t.assigneeName}
-                                </span>
-                                {t.handoverFromName && (
-                                  <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded text-[11px] font-semibold">
-                                    Started by {t.handoverFromName}
-                                  </span>
-                                )}
-                                {t.delegatedByName && (
-                                  <span className="px-2 py-0.5 bg-violet-50 text-violet-700 rounded text-[11px] font-semibold">
-                                    Delegated by {t.delegatedByName}
-                                  </span>
-                                )}
-                              </div>
-                              <h4 className="font-bold text-slate-900 text-base mt-1">{t.title}</h4>
-                              <p className="text-xs text-slate-600 whitespace-pre-line">{t.description}</p>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <button
-                                onClick={() => handleReturnTask(t)}
-                                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs flex items-center space-x-1">
-                                <RotateCcw className="w-3.5 h-3.5"/>
-                                <span>Send Back</span>
-                              </button>
-                              <button
-                                onClick={() => handleValidateTask(t)}
-                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs flex items-center space-x-1.5">
-                                <Check className="w-4 h-4"/>
-                                <span>Validate & Archive</span>
-                              </button>
-                            </div>
-                          </div>
+                  </button>
 
-                          {/* Colleague Completion Proof */}
-                          <div className="p-3.5 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-2">
-                            <p className="text-xs font-bold text-emerald-900">Colleague Completion Note:</p>
-                            <p className="text-xs text-slate-700">{t.completionNote || 'No note provided.'}</p>
-                            <div className="flex flex-wrap gap-3 pt-1">
-                              {t.managerPhoto && (
-                                <div>
-                                  <span className="text-[10px] font-semibold text-slate-500 block mb-1">Reference Photo:</span>
-                                  <img
-                                    src={t.managerPhoto}
-                                    alt="Reference"
-                                    onClick={() => {
-                                      setLightboxTitle('Reference Photo');
-                                      setLightboxImage(t.managerPhoto);
-                                    }}
-                                    className="h-24 w-32 object-cover rounded-lg border cursor-pointer hover:opacity-90"
-                                  />
+                  {openCards.reassigned && (
+                    <div className="p-5 pt-0 border-t border-orange-200/70 space-y-3">
+                      {waitingReassignOrPausedTasks.length === 0 ? (
+                        <p className="text-center py-6 text-xs text-slate-400 italic">
+                          No paused or incomplete tasks waiting for reassignment.
+                        </p>
+                      ) : (
+                        waitingReassignOrPausedTasks.map((t) => {
+                          const isIncomplete = t.progressStatus === 'incomplete';
+                          const isUrgent = t.priority === 'urgent';
+                          return (
+                            <div
+                              key={t.id}
+                              className="bg-white p-4 rounded-xl border border-orange-200 shadow-2xs space-y-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="space-y-1">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {isUrgent && (
+                                      <span className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-bold uppercase flex items-center space-x-1">
+                                        <Flame className="w-3 h-3"/>
+                                        <span>Priority</span>
+                                      </span>
+                                    )}
+                                    {isIncomplete ? (
+                                      <span className="px-2 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold uppercase">
+                                        Incomplete Handover — {t.assigneeName}
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 bg-amber-100 text-amber-900 rounded text-[10px] font-bold">
+                                        Paused by {t.assigneeName}: {t.pauseReason || 'Interrupted'}
+                                        {t.pausedAt
+                                          ? ` (${new Date(t.pausedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`
+                                          : ''}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <h4 className="font-bold text-slate-900 text-sm">{t.title}</h4>
+                                  <p className="text-xs text-slate-600 whitespace-pre-line">{t.description}</p>
+                                  {t.handoverNote && (
+                                    <p className="text-xs text-orange-900 bg-orange-50 px-2.5 py-1.5 rounded-lg border border-orange-200 font-medium">
+                                      Handover Note: "{t.handoverNote}"
+                                    </p>
+                                  )}
                                 </div>
-                              )}
-                              {t.completionPhoto && (
-                                <div>
-                                  <span className="text-[10px] font-semibold text-emerald-700 block mb-1">Completed Proof Photo (Click to enlarge):</span>
-                                  <img
-                                    src={t.completionPhoto}
-                                    alt="Completed Proof"
-                                    onClick={() => {
-                                      setLightboxTitle('Completion Proof Photo');
-                                      setLightboxImage(t.completionPhoto);
-                                    }}
-                                    className="h-24 w-32 object-cover rounded-lg border-2 border-emerald-500 cursor-pointer hover:opacity-90"
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Comments Thread */}
-                          <div className="space-y-2 pt-2 border-t border-slate-100">
-                            {(t.comments || []).map((c) => (
-                              <div key={c.id} className="text-xs bg-slate-50 p-2 rounded-lg">
-                                <span className="font-bold text-slate-800">{c.authorName}: </span>
-                                <span className="text-slate-600">{c.text}</span>
+                                <button
+                                  onClick={() => handleDeleteTask(t)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50">
+                                  <Trash2 className="w-4 h-4"/>
+                                </button>
                               </div>
-                            ))}
-                            <div className="flex space-x-2">
-                              <input
-                                type="text"
-                                value={commentInputs[t.id] || ''}
-                                onChange={(e) => setCommentInputs((prev) => ({ ...prev, [t.id]: e.target.value }))}
-                                placeholder="Add a comment or feedback..."
-                                className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs"
-                              />
-                              <button
-                                onClick={() => handleAddComment(t)}
-                                className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-semibold">
-                                Send
-                              </button>
+
+                              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-[11px] font-semibold text-slate-500">Quick Reassign:</span>
+                                  <select
+                                    value={t.assigneeId}
+                                    onChange={(e) => handleQuickReassign(t, e.target.value)}
+                                    className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-800 font-medium">
+                                    {assignableUsers.map((u) => (
+                                      <option key={u.id} value={u.id}>
+                                        {u.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    onClick={() => {
+                                      setDelegatingTask(t);
+                                      setDelegateTargetIds([]);
+                                      setDelegateNote(t.handoverNote || '');
+                                    }}
+                                    className="px-2.5 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-semibold flex items-center space-x-1">
+                                    <Share2 className="w-3 h-3"/>
+                                    <span>Reassign + Note</span>
+                                  </button>
+                                </div>
+
+                                <button
+                                  onClick={() => handleValidateTask(t)}
+                                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs flex items-center space-x-1">
+                                  <Check className="w-3.5 h-3.5"/>
+                                  <span>Validate Directly</span>
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        </div>
-                      ))}
+                          );
+                        })
+                      )}
                     </div>
                   )}
                 </div>
 
-                {/* Active Team Workload (With Working, Paused, Incomplete Handover & Direct Validation) */}
-                <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                {/* CARD 2: WAITING TO BE VALIDATED */}
+                <div className="bg-amber-50/70 rounded-2xl border border-amber-200 overflow-hidden shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => toggleCard('validation')}
+                    className="w-full p-5 flex items-center justify-between text-left hover:bg-amber-100/50 transition-all">
                     <div className="flex items-center space-x-3">
-                      <Users className="w-5 h-5 text-blue-600"/>
+                      <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
+                        <Bell className="w-5 h-5"/>
+                      </div>
                       <div>
-                        <h2 className="font-bold text-slate-900 text-base">Active Team Workload</h2>
-                        <p className="text-xs text-slate-500">
-                          Monitor Working / Paused / Incomplete tasks, reassign unfinished work, or click Validate directly.
+                        <h2 className="font-bold text-slate-900 text-base">Waiting to be Validated</h2>
+                        <p className="text-xs text-amber-800">
+                          Inspect colleague completion photos and notes before archiving.
                         </p>
                       </div>
                     </div>
-                  </div>
+                    <div className="flex items-center space-x-2.5 shrink-0">
+                      <span className="px-3 py-1 bg-amber-200 text-amber-950 rounded-full text-xs font-bold">
+                        {allPendingTasks.length}
+                      </span>
+                      {openCards.validation ? (
+                        <ChevronUp className="w-5 h-5 text-amber-800"/>
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-amber-800"/>
+                      )}
+                    </div>
+                  </button>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {assignableUsers.map((member) => {
-                      const memberActive = allActiveTasks.filter((t) => t.assigneeId === member.id);
-                      return (
-                        <div key={member.id} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2">
-                              <div className={`w-7 h-7 rounded-lg ${member.color || 'bg-blue-600'} text-white font-bold flex items-center justify-center text-xs`}>
-                                {member.name[0]}
-                              </div>
+                  {openCards.validation && (
+                    <div className="p-5 pt-0 border-t border-amber-200/70 space-y-4">
+                      {allPendingTasks.length === 0 ? (
+                        <div className="text-center py-6 text-slate-400 text-xs italic">
+                          <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto mb-2"/>
+                          No completed tasks waiting for validation.
+                        </div>
+                      ) : (
+                        allPendingTasks.map((t) => (
+                          <div key={t.id} className="bg-white p-5 rounded-xl border border-amber-200 shadow-xs space-y-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                               <div>
-                                <h4 className="font-bold text-slate-800 text-xs">{member.name}</h4>
-                                <p className="text-[10px] text-slate-400 capitalize">{member.role.replace('_', ' ')}</p>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {t.priority === 'urgent' && (
+                                    <span className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-bold uppercase flex items-center space-x-1">
+                                      <Flame className="w-3 h-3"/>
+                                      <span>Priority</span>
+                                    </span>
+                                  )}
+                                  <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[11px] font-semibold">
+                                    Completed by {t.assigneeName}
+                                  </span>
+                                  {t.handoverFromName && (
+                                    <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded text-[11px] font-semibold">
+                                      Started by {t.handoverFromName}
+                                    </span>
+                                  )}
+                                  {t.delegatedByName && (
+                                    <span className="px-2 py-0.5 bg-violet-50 text-violet-700 rounded text-[11px] font-semibold">
+                                      Delegated by {t.delegatedByName}
+                                    </span>
+                                  )}
+                                </div>
+                                <h4 className="font-bold text-slate-900 text-base mt-1">{t.title}</h4>
+                                <p className="text-xs text-slate-600 whitespace-pre-line">{t.description}</p>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  onClick={() => handleReturnTask(t)}
+                                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs flex items-center space-x-1">
+                                  <RotateCcw className="w-3.5 h-3.5"/>
+                                  <span>Send Back</span>
+                                </button>
+                                <button
+                                  onClick={() => handleValidateTask(t)}
+                                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs flex items-center space-x-1.5">
+                                  <Check className="w-4 h-4"/>
+                                  <span>Validate & Archive</span>
+                                </button>
                               </div>
                             </div>
-                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-bold">
-                              {memberActive.length} Active
-                            </span>
-                          </div>
-                          <div className="space-y-2.5">
-                            {memberActive.length === 0 ? (
-                              <p className="text-xs text-slate-400 italic">No active tasks.</p>
-                            ) : (
-                              memberActive.map((t) => {
-                                const isUrgent = t.priority === 'urgent';
-                                const isInProgress = t.progressStatus === 'in_progress';
-                                const isPaused = t.progressStatus === 'paused';
-                                const isIncomplete = t.progressStatus === 'incomplete';
 
-                                return (
-                                  <div
-                                    key={t.id}
-                                    className={`bg-white p-3 rounded-xl border text-xs space-y-2.5 shadow-2xs ${
-                                      isIncomplete
-                                        ? 'border-orange-400 ring-1 ring-orange-200 bg-orange-50/20'
-                                        : isUrgent
-                                        ? 'border-rose-300 ring-1 ring-rose-100'
-                                        : 'border-slate-200'
-                                    }`}>
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div className="space-y-1">
-                                        <div className="flex flex-wrap items-center gap-1.5">
-                                          {isUrgent && (
-                                            <span className="px-1.5 py-0.5 bg-rose-600 text-white rounded text-[10px] font-bold uppercase flex items-center space-x-1">
-                                              <Flame className="w-2.5 h-2.5"/>
-                                              <span>Priority</span>
-                                            </span>
-                                          )}
-                                          {isInProgress && (
-                                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded text-[10px] font-bold flex items-center space-x-1">
-                                              <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-ping"></span>
-                                              <span>
-                                                Working On It
-                                                {t.startedAt
-                                                  ? ` (${new Date(t.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`
-                                                  : ''}
-                                              </span>
-                                            </span>
-                                          )}
-                                          {isPaused && (
-                                            <span className="px-1.5 py-0.5 bg-amber-100 text-amber-900 rounded text-[10px] font-bold flex items-center space-x-1">
-                                              <Pause className="w-2.5 h-2.5"/>
-                                              <span>
-                                                Paused: {t.pauseReason || 'Interrupted'}
-                                                {t.pausedAt
-                                                  ? ` (${new Date(t.pausedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`
-                                                  : ''}
-                                              </span>
-                                            </span>
-                                          )}
-                                          {isIncomplete && (
-                                            <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold flex items-center space-x-1">
-                                              <AlertTriangle className="w-2.5 h-2.5"/>
-                                              <span>Incomplete / Handover Needed</span>
-                                            </span>
-                                          )}
-                                          {!isInProgress && !isPaused && !isIncomplete && (
-                                            <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[10px] font-semibold">
-                                              Not Started
-                                            </span>
-                                          )}
-                                          {t.handoverFromName && (
-                                            <span className="px-1.5 py-0.5 bg-orange-100 text-orange-800 rounded text-[10px] font-semibold">
-                                              Handover from {t.handoverFromName}
-                                            </span>
-                                          )}
-                                        </div>
-                                        <p className="font-bold text-slate-800">{t.title}</p>
-                                        <p className="text-slate-500 text-[11px] whitespace-pre-line">{t.description}</p>
-                                        {t.handoverNote && (
-                                          <p className="text-[11px] text-orange-800 bg-orange-50 px-2 py-1 rounded border border-orange-200 font-medium">
-                                            Handover Note: "{t.handoverNote}"
-                                          </p>
-                                        )}
-                                      </div>
-                                      <button
-                                        onClick={() => handleDeleteTask(t)}
-                                        title="Delete Task"
-                                        className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-all shrink-0">
-                                        <Trash2 className="w-3.5 h-3.5"/>
-                                      </button>
-                                    </div>
-
-                                    {/* Direct Supervisor Validate Button & Reassign Incomplete Controls */}
-                                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                                      <div className="flex items-center space-x-1.5">
-                                        <span className="text-[10px] font-semibold text-slate-400">Reassign:</span>
-                                        <select
-                                          value={t.assigneeId}
-                                          onChange={(e) => handleQuickReassign(t, e.target.value)}
-                                          className="text-[11px] bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-700 font-medium">
-                                          {assignableUsers.map((u) => (
-                                            <option key={u.id} value={u.id}>
-                                              {u.name}
-                                            </option>
-                                          ))}
-                                        </select>
-                                        <button
-                                          onClick={() => {
-                                            setDelegatingTask(t);
-                                            setDelegateTargetIds([]);
-                                            setDelegateNote(t.handoverNote || '');
-                                          }}
-                                          title="Reassign with handover note"
-                                          className="px-2 py-1 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg text-[10px] font-semibold">
-                                          + Note
-                                        </button>
-                                      </div>
-
-                                      <button
-                                        onClick={() => handleValidateTask(t)}
-                                        title="Validate and archive directly on behalf of colleague"
-                                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-[11px] flex items-center space-x-1 shadow-2xs transition-all">
-                                        <Check className="w-3.5 h-3.5"/>
-                                        <span>Validate</span>
-                                      </button>
-                                    </div>
+                            {/* Colleague Completion Proof */}
+                            <div className="p-3.5 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-2">
+                              <p className="text-xs font-bold text-emerald-900">Colleague Completion Note:</p>
+                              <p className="text-xs text-slate-700">{t.completionNote || 'No note provided.'}</p>
+                              <div className="flex flex-wrap gap-3 pt-1">
+                                {t.managerPhoto && (
+                                  <div>
+                                    <span className="text-[10px] font-semibold text-slate-500 block mb-1">Reference Photo:</span>
+                                    <img
+                                      src={t.managerPhoto}
+                                      alt="Reference"
+                                      onClick={() => {
+                                        setLightboxTitle('Reference Photo');
+                                        setLightboxImage(t.managerPhoto);
+                                      }}
+                                      className="h-24 w-32 object-cover rounded-lg border cursor-pointer hover:opacity-90"
+                                    />
                                   </div>
-                                );
-                              })
-                            )}
+                                )}
+                                {t.completionPhoto && (
+                                  <div>
+                                    <span className="text-[10px] font-semibold text-emerald-700 block mb-1">Completed Proof Photo (Click to enlarge):</span>
+                                    <img
+                                      src={t.completionPhoto}
+                                      alt="Completed Proof"
+                                      onClick={() => {
+                                        setLightboxTitle('Completion Proof Photo');
+                                        setLightboxImage(t.completionPhoto);
+                                      }}
+                                      className="h-24 w-32 object-cover rounded-lg border-2 border-emerald-500 cursor-pointer hover:opacity-90"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Comments Thread */}
+                            <div className="space-y-2 pt-2 border-t border-slate-100">
+                              {(t.comments || []).map((c) => (
+                                <div key={c.id} className="text-xs bg-slate-50 p-2 rounded-lg">
+                                  <span className="font-bold text-slate-800">{c.authorName}: </span>
+                                  <span className="text-slate-600">{c.text}</span>
+                                </div>
+                              ))}
+                              <div className="flex space-x-2">
+                                <input
+                                  type="text"
+                                  value={commentInputs[t.id] || ''}
+                                  onChange={(e) => setCommentInputs((prev) => ({ ...prev, [t.id]: e.target.value }))}
+                                  placeholder="Add a comment or feedback..."
+                                  className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs"
+                                />
+                                <button
+                                  onClick={() => handleAddComment(t)}
+                                  className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-semibold">
+                                  Send
+                                </button>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* CARD 3: IN PROGRESS — WORKING ON IT NOW */}
+                <div className="bg-blue-50/50 rounded-2xl border border-blue-200 overflow-hidden shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => toggleCard('inProgress')}
+                    className="w-full p-5 flex items-center justify-between text-left hover:bg-blue-100/40 transition-all">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
+                        <Play className="w-5 h-5 fill-current"/>
+                      </div>
+                      <div>
+                        <h2 className="font-bold text-slate-900 text-base">In Progress (Active Right Now)</h2>
+                        <p className="text-xs text-blue-800">
+                          Colleagues currently working on assigned tasks on the shop floor.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2.5 shrink-0">
+                      <span className="px-3 py-1 bg-blue-200 text-blue-950 rounded-full text-xs font-bold">
+                        {inProgressTasks.length}
+                      </span>
+                      {openCards.inProgress ? (
+                        <ChevronUp className="w-5 h-5 text-blue-800"/>
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-blue-800"/>
+                      )}
+                    </div>
+                  </button>
+
+                  {openCards.inProgress && (
+                    <div className="p-5 pt-0 border-t border-blue-200/70 space-y-3">
+                      {inProgressTasks.length === 0 ? (
+                        <p className="text-center py-6 text-xs text-slate-400 italic">
+                          No tasks are currently marked In Progress.
+                        </p>
+                      ) : (
+                        inProgressTasks.map((t) => {
+                          const isUrgent = t.priority === 'urgent';
+                          return (
+                            <div
+                              key={t.id}
+                              className={`bg-white p-4 rounded-xl border shadow-2xs space-y-3 ${
+                                isUrgent ? 'border-rose-300 ring-1 ring-rose-100' : 'border-blue-200'
+                              }`}>
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="space-y-1">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="px-2 py-0.5 bg-slate-900 text-white rounded text-[11px] font-bold">
+                                      {t.assigneeName}
+                                    </span>
+                                    {isUrgent && (
+                                      <span className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-bold uppercase flex items-center space-x-1">
+                                        <Flame className="w-3 h-3"/>
+                                        <span>Priority</span>
+                                      </span>
+                                    )}
+                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-[10px] font-bold flex items-center space-x-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-ping"></span>
+                                      <span>
+                                        Started{' '}
+                                        {t.startedAt
+                                          ? new Date(t.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                          : 'Now'}
+                                      </span>
+                                    </span>
+                                    {t.handoverFromName && (
+                                      <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded text-[10px] font-semibold">
+                                        Handover from {t.handoverFromName}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <h4 className="font-bold text-slate-900 text-sm">{t.title}</h4>
+                                  <p className="text-xs text-slate-600 whitespace-pre-line">{t.description}</p>
+                                </div>
+                                <button
+                                  onClick={() => handleDeleteTask(t)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50">
+                                  <Trash2 className="w-4 h-4"/>
+                                </button>
+                              </div>
+
+                              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-[11px] font-semibold text-slate-500">Reassign:</span>
+                                  <select
+                                    value={t.assigneeId}
+                                    onChange={(e) => handleQuickReassign(t, e.target.value)}
+                                    className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-800 font-medium">
+                                    {assignableUsers.map((u) => (
+                                      <option key={u.id} value={u.id}>
+                                        {u.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    onClick={() => {
+                                      setDelegatingTask(t);
+                                      setDelegateTargetIds([]);
+                                      setDelegateNote(t.handoverNote || '');
+                                    }}
+                                    className="px-2 py-1 bg-violet-50 hover:bg-violet-100 text-violet-700 rounded-lg text-[11px] font-semibold">
+                                    + Handover Note
+                                  </button>
+                                </div>
+
+                                <button
+                                  onClick={() => handleValidateTask(t)}
+                                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs flex items-center space-x-1">
+                                  <Check className="w-3.5 h-3.5"/>
+                                  <span>Validate Directly</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* CARD 4: ALLOCATED TASKS (NOT STARTED YET) */}
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => toggleCard('allocated')}
+                    className="w-full p-5 flex items-center justify-between text-left hover:bg-slate-50 transition-all">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-9 h-9 rounded-xl bg-slate-800 text-white flex items-center justify-center shrink-0">
+                        <Clock className="w-5 h-5"/>
+                      </div>
+                      <div>
+                        <h2 className="font-bold text-slate-900 text-base">Allocated Tasks (Not Started Yet)</h2>
+                        <p className="text-xs text-slate-500">
+                          Assigned tasks waiting in colleague queues to be started.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2.5 shrink-0">
+                      <span className="px-3 py-1 bg-slate-200 text-slate-900 rounded-full text-xs font-bold">
+                        {allocatedNotStartedTasks.length}
+                      </span>
+                      {openCards.allocated ? (
+                        <ChevronUp className="w-5 h-5 text-slate-600"/>
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-slate-600"/>
+                      )}
+                    </div>
+                  </button>
+
+                  {openCards.allocated && (
+                    <div className="p-5 pt-0 border-t border-slate-100 space-y-3">
+                      {allocatedNotStartedTasks.length === 0 ? (
+                        <p className="text-center py-6 text-xs text-slate-400 italic">
+                          No unstarted tasks waiting in colleague queues.
+                        </p>
+                      ) : (
+                        allocatedNotStartedTasks.map((t) => {
+                          const isUrgent = t.priority === 'urgent';
+                          return (
+                            <div
+                              key={t.id}
+                              className={`bg-slate-50/70 p-4 rounded-xl border space-y-3 ${
+                                isUrgent ? 'border-rose-300 ring-1 ring-rose-100 bg-rose-50/20' : 'border-slate-200'
+                              }`}>
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="space-y-1">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="px-2 py-0.5 bg-indigo-600 text-white rounded text-[11px] font-bold">
+                                      {t.assigneeName}
+                                    </span>
+                                    {isUrgent && (
+                                      <span className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-bold uppercase flex items-center space-x-1">
+                                        <Flame className="w-3 h-3"/>
+                                        <span>Priority</span>
+                                      </span>
+                                    )}
+                                    <span className="px-2 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] font-semibold">
+                                      Not Started
+                                    </span>
+                                    {t.handoverFromName && (
+                                      <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded text-[10px] font-semibold">
+                                        Handover from {t.handoverFromName}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <h4 className="font-bold text-slate-900 text-sm">{t.title}</h4>
+                                  <p className="text-xs text-slate-600 whitespace-pre-line">{t.description}</p>
+                                </div>
+                                <button
+                                  onClick={() => handleDeleteTask(t)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50">
+                                  <Trash2 className="w-4 h-4"/>
+                                </button>
+                              </div>
+
+                              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/70">
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-[11px] font-semibold text-slate-500">Move To:</span>
+                                  <select
+                                    value={t.assigneeId}
+                                    onChange={(e) => handleQuickReassign(t, e.target.value)}
+                                    className="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-slate-800 font-medium">
+                                    {assignableUsers.map((u) => (
+                                      <option key={u.id} value={u.id}>
+                                        {u.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                <button
+                                  onClick={() => handleValidateTask(t)}
+                                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs flex items-center space-x-1">
+                                  <Check className="w-3.5 h-3.5"/>
+                                  <span>Validate Directly</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -2959,547 +3145,4 @@ export default function App() {
                               {(!isInProgress || isPaused) && (
                                 <button
                                   onClick={() => handleStartOrResumeTask(t)}
-                                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs shadow-sm flex items-center justify-center space-x-1.5 transition-all">
-                                  <Play className="w-3.5 h-3.5 fill-current"/>
-                                  <span>{isPaused ? 'Resume Task' : 'Start Task'}</span>
-                                </button>
-                              )}
-
-                              {isInProgress && (
-                                <button
-                                  onClick={() => {
-                                    setPausingTask(t);
-                                    setPauseReason(PAUSE_REASONS[0]);
-                                    setCustomPauseReason('');
-                                  }}
-                                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl text-xs shadow-sm flex items-center justify-center space-x-1.5 transition-all">
-                                  <Pause className="w-3.5 h-3.5"/>
-                                  <span>Pause Task</span>
-                                </button>
-                              )}
-
-                              {(isInProgress || isPaused) && !isIncomplete && (
-                                <button
-                                  onClick={() => {
-                                    setHandoverTask(t);
-                                    setHandoverNote('');
-                                  }}
-                                  className="px-3.5 py-1.5 bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 font-semibold rounded-xl text-xs flex items-center justify-center space-x-1 transition-all">
-                                  <AlertTriangle className="w-3.5 h-3.5"/>
-                                  <span>Handover / Incomplete</span>
-                                </button>
-                              )}
-
-                              {currentUser.role === 'team_leader' && (
-                                <button
-                                  onClick={() => {
-                                    setDelegatingTask(t);
-                                    setDelegateTargetIds([]);
-                                    setDelegateNote('');
-                                  }}
-                                  className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white font-semibold rounded-xl text-xs shadow-sm flex items-center justify-center space-x-1.5">
-                                  <Share2 className="w-3.5 h-3.5"/>
-                                  <span>Reassign to Colleague(s)</span>
-                                </button>
-                              )}
-
-                              <button
-                                onClick={() => setCompletingTask(t)}
-                                className="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs shadow-md flex items-center justify-center space-x-2">
-                                <Camera className="w-4 h-4"/>
-                                <span>Complete & Add Photo</span>
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Task Comments */}
-                          <div className="space-y-2 pt-3 border-t border-slate-100">
-                            {(t.comments || []).map((c) => (
-                              <div key={c.id} className="text-xs bg-slate-50 p-2 rounded-lg">
-                                <span className="font-bold text-slate-800">{c.authorName}: </span>
-                                <span className="text-slate-600">{c.text}</span>
-                              </div>
-                            ))}
-                            <div className="flex space-x-2">
-                              <input
-                                type="text"
-                                value={commentInputs[t.id] || ''}
-                                onChange={(e) => setCommentInputs((prev) => ({ ...prev, [t.id]: e.target.value }))}
-                                placeholder="Ask a question or leave a comment..."
-                                className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs bg-white"
-                              />
-                              <button
-                                onClick={() => handleAddComment(t)}
-                                className="px-3 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-semibold">
-                                Comment
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Colleague Pending & Validated Sidebar */}
-            <div className="space-y-6">
-              <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
-                <h3 className="font-bold text-slate-900 text-sm">Awaiting Manager Validation ({myPendingTasks.length})</h3>
-                <div className="space-y-3">
-                  {myPendingTasks.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">No tasks awaiting review.</p>
-                  ) : (
-                    myPendingTasks.map((t) => (
-                      <div key={t.id} className="p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-800 text-xs">{t.title}</span>
-                          <span className="px-2 py-0.5 bg-amber-200 text-amber-800 rounded text-[10px] font-semibold">In Review</span>
-                        </div>
-                        <p className="text-[11px] text-slate-600">{t.completionNote}</p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
-                <h3 className="font-bold text-slate-900 text-sm">Validated & Completed ({myArchivedTasks.length})</h3>
-                <div className="space-y-3">
-                  {myArchivedTasks.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">No validated tasks yet.</p>
-                  ) : (
-                    myArchivedTasks.map((t) => (
-                      <div key={t.id} className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-800 text-xs">{t.title}</span>
-                          <span className="px-2 py-0.5 bg-emerald-200 text-emerald-800 rounded text-[10px] font-semibold">Approved</span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ================= MANAGER REQUESTS TAB ================= */}
-        {activeTab === 'requests' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-4">
-              <h2 className="font-bold text-slate-900 text-base">Submit Request to Manager</h2>
-              <form onSubmit={handleCreateRequest} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Request Category</label>
-                  <select
-                    value={reqType}
-                    onChange={(e) => setReqType(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white">
-                    <option value="Time Off / Holiday">Time Off / Holiday</option>
-                    <option value="Shift Swap">Shift Swap</option>
-                    <option value="Equipment / Uniform">Equipment / Uniform</option>
-                    <option value="General Manager Request">General Manager Request</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Relevant Dates (Optional)</label>
-                  <input
-                    type="text"
-                    value={reqDates}
-                    onChange={(e) => setReqDates(e.target.value)}
-                    placeholder="e.g. 14th Nov - 18th Nov"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Request Message</label>
-                  <textarea
-                    rows="3"
-                    required
-                    value={reqNote}
-                    onChange={(e) => setReqNote(e.target.value)}
-                    placeholder="e.g. Can you look at approving my time off..."
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-sm flex items-center justify-center space-x-2">
-                  <Send className="w-4 h-4"/>
-                  <span>Send Request</span>
-                </button>
-              </form>
-            </div>
-
-            <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
-              <h2 className="font-bold text-slate-900 text-base">
-                {isSupervisor ? 'All Team Requests' : 'My Submitted Requests'}
-              </h2>
-              <div className="space-y-4">
-                {(isSupervisor ? requests : requests.filter((r) => r.requesterId === currentUser.id)).length === 0 ? (
-                  <p className="text-xs text-slate-400 italic py-6 text-center">No requests submitted yet.</p>
-                ) : (
-                  (isSupervisor ? requests : requests.filter((r) => r.requesterId === currentUser.id)).map((r) => (
-                    <div key={r.id} className="p-4 rounded-xl border border-slate-200 space-y-3 bg-slate-50/50">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="text-xs font-bold text-indigo-600">{r.requesterName}</span>
-                          <span className="mx-2 text-slate-300">•</span>
-                          <span className="text-xs font-semibold text-slate-700">{r.type}</span>
-                          {r.dates && <span className="ml-2 text-xs text-slate-500">({r.dates})</span>}
-                        </div>
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold capitalize ${
-                            r.status === 'approved'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : r.status === 'declined'
-                              ? 'bg-rose-100 text-rose-800'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}>
-                          {r.status}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-slate-100">{r.note}</p>
-
-                      {r.managerReply && (
-                        <p className="text-xs text-indigo-900 bg-indigo-50 p-2.5 rounded-lg">
-                          <span className="font-bold">Manager Response ({r.reviewedBy}): </span>
-                          {r.managerReply}
-                        </p>
-                      )}
-
-                      {isSupervisor && r.status === 'pending' && (
-                        <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                          <input
-                            type="text"
-                            value={managerReplyInputs[r.id] || ''}
-                            onChange={(e) => setManagerReplyInputs((prev) => ({ ...prev, [r.id]: e.target.value }))}
-                            placeholder="Optional reply note..."
-                            className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs bg-white"
-                          />
-                          <button
-                            onClick={() => handleDecisionRequest(r, 'approved')}
-                            className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold">
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => handleDecisionRequest(r, 'declined')}
-                            className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-semibold">
-                            Decline
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ================= USER MANAGEMENT TAB (MANAGER ONLY) ================= */}
-        {activeTab === 'users' && isManager && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-4">
-              <h2 className="font-bold text-slate-900 text-base">Add Colleague or Team Leader</h2>
-              <form onSubmit={handleAddUser} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Full Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={newUserName}
-                    onChange={(e) => setNewUserName(e.target.value)}
-                    placeholder="e.g. Jordan Smith"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Role</label>
-                  <select
-                    value={newUserRole}
-                    onChange={(e) => setNewUserRole(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white">
-                    <option value="colleague">Colleague (Sees Own Tasks & Requests)</option>
-                    <option value="team_leader">Team Leader (Supervisor + Receives Manager Tasks)</option>
-                    <option value="manager">Manager (Full Admin)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Initial Login PIN</label>
-                  <input
-                    type="text"
-                    required
-                    value={newUserPin}
-                    onChange={(e) => setNewUserPin(e.target.value)}
-                    placeholder="1234"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-sm flex items-center justify-center space-x-2">
-                  <UserPlus className="w-4 h-4"/>
-                  <span>Create Account</span>
-                </button>
-              </form>
-            </div>
-
-            <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
-              <div>
-                <h2 className="font-bold text-slate-900 text-base">Current Team Roster ({teamUsers.length})</h2>
-                <p className="text-xs text-slate-500">Click Edit / PIN on any user to update their name, role, or security PIN.</p>
-              </div>
-
-              <div className="divide-y divide-slate-100">
-                {teamUsers.map((u) => (
-                  <div key={u.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    {editingUserId === u.id ? (
-                      <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2 bg-indigo-50/60 p-3 rounded-xl border border-indigo-200">
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Name</label>
-                          <input
-                            type="text"
-                            value={editUserName}
-                            onChange={(e) => setEditUserName(e.target.value)}
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Role</label>
-                          <select
-                            value={editUserRole}
-                            onChange={(e) => setEditUserRole(e.target.value)}
-                            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white">
-                            <option value="colleague">Colleague</option>
-                            <option value="team_leader">Team Leader</option>
-                            <option value="manager">Manager</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Login PIN</label>
-                          <div className="flex items-center space-x-1.5">
-                            <input
-                              type="text"
-                              value={editUserPin}
-                              onChange={(e) => setEditUserPin(e.target.value)}
-                              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-mono bg-white"
-                            />
-                            <button
-                              onClick={() => handleSaveEditUser(u.id)}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shrink-0">
-                              Save
-                            </button>
-                            <button
-                              onClick={() => setEditingUserId(null)}
-                              className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-semibold shrink-0">
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex items-center space-x-3">
-                          <div className={`w-9 h-9 rounded-xl ${u.color || 'bg-indigo-600'} text-white font-bold flex items-center justify-center text-xs`}>
-                            {u.name[0]}
-                          </div>
-                          <div>
-                            <p className="font-bold text-sm text-slate-800">{u.name}</p>
-                            <p className="text-xs text-slate-500 capitalize">
-                              Role: {u.role.replace('_', ' ')} • PIN: <span className="font-mono font-semibold text-indigo-600">{u.pin || '1234'}</span>
-                              {(u.fcmTokens || []).length > 0 && (
-                                <span className="ml-2 px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px] font-semibold">
-                                  Push Linked
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() => startEditUser(u)}
-                            className="px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-all flex items-center space-x-1">
-                            <Lock className="w-3.5 h-3.5"/>
-                            <span>Edit / PIN</span>
-                          </button>
-                          {u.id !== currentUser.id && (
-                            <button
-                              onClick={() => handleDeleteUser(u)}
-                              className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                              title="Delete User">
-                              <Trash2 className="w-4 h-4"/>
-                            </button>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ================= BOTTOM OF PROFILE: ASDA TERMINAL LOGIN QR CODES (LOCALSTORAGE ONLY) ================= */}
-        <section className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-100">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center">
-                <QrCode className="w-5 h-5"/>
-              </div>
-              <div>
-                <h2 className="font-bold text-slate-900 text-base">
-                  {currentUser.name}'s Terminal Login QR Codes
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Saved privately on this phone only (never uploaded to the cloud). Scan with your Zebra terminal to log in.
-                </p>
-              </div>
-            </div>
-            {(savedQrEmail || savedQrPassword) && (
-              <button
-                onClick={handleClearTerminalQr}
-                className="text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl w-fit">
-                Clear Saved QR Codes
-              </button>
-            )}
-          </div>
-
-          {/* Input Forms for Email & Password */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <form onSubmit={handleSaveEmailQr} className="space-y-2">
-              <label className="block text-xs font-semibold text-slate-600 uppercase">
-                Asda Email Address
-              </label>
-              <div className="flex space-x-2">
-                <input
-                  type="text"
-                  value={qrEmailInput}
-                  onChange={(e) => setQrEmailInput(e.target.value)}
-                  placeholder="e.g. firstname.lastname@asda.co.uk"
-                  className="flex-1 px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs shrink-0">
-                  Generate Email QR
-                </button>
-              </div>
-            </form>
-
-            <form onSubmit={handleSavePasswordQr} className="space-y-2">
-              <label className="block text-xs font-semibold text-slate-600 uppercase">
-                Terminal Password
-              </label>
-              <div className="flex space-x-2">
-                <input
-                  type="password"
-                  value={qrPasswordInput}
-                  onChange={(e) => setQrPasswordInput(e.target.value)}
-                  placeholder="Enter your terminal password"
-                  className="flex-1 px-3.5 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl text-xs shrink-0">
-                  Generate Password QR
-                </button>
-              </div>
-            </form>
-          </div>
-
-          {/* Saved QR Code Display Cards */}
-          {(savedQrEmail || savedQrPassword) && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
-              {/* Email QR Image Card */}
-              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center text-center space-y-3">
-                <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-800 font-bold text-xs uppercase tracking-wider">
-                  Email
-                </span>
-                {savedQrEmail ? (
-                  <>
-                    <div
-                      onClick={() => {
-                        setLightboxTitle('Email QR Code');
-                        setLightboxImage(buildQrCodeUrl(savedQrEmail));
-                      }}
-                      className="p-4 bg-white rounded-2xl border-2 border-slate-200 shadow-sm cursor-pointer hover:border-indigo-500 transition-all">
-                      <img
-                        src={buildQrCodeUrl(savedQrEmail)}
-                        alt="Email QR Code"
-                        className="w-44 h-44 object-contain"
-                      />
-                    </div>
-                    <p className="text-xs text-slate-500 font-mono truncate max-w-xs">{savedQrEmail}</p>
-                    <p className="text-[11px] text-indigo-600 font-semibold">Tap QR code to enlarge full-screen</p>
-                  </>
-                ) : (
-                  <p className="text-xs text-slate-400 italic py-12">No Email QR generated yet.</p>
-                )}
-              </div>
-
-              {/* Password QR Image Card (With Privacy Blur Shield) */}
-              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center text-center space-y-3">
-                <div className="flex items-center space-x-2">
-                  <span className="px-3 py-1 rounded-full bg-slate-900 text-white font-bold text-xs uppercase tracking-wider">
-                    Password
-                  </span>
-                  {savedQrPassword && (
-                    <button
-                      type="button"
-                      onClick={() => setRevealPasswordQr(!revealPasswordQr)}
-                      className="px-2.5 py-1 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold flex items-center space-x-1">
-                      {revealPasswordQr ? <EyeOff className="w-3.5 h-3.5"/> : <Eye className="w-3.5 h-3.5"/>}
-                      <span>{revealPasswordQr ? 'Hide QR' : 'Reveal QR'}</span>
-                    </button>
-                  )}
-                </div>
-
-                {savedQrPassword ? (
-                  <>
-                    <div
-                      onClick={() => {
-                        if (!revealPasswordQr) {
-                          setRevealPasswordQr(true);
-                        } else {
-                          setLightboxTitle('Password QR Code');
-                          setLightboxImage(buildQrCodeUrl(savedQrPassword));
-                        }
-                      }}
-                      className="p-4 bg-white rounded-2xl border-2 border-slate-200 shadow-sm cursor-pointer hover:border-indigo-500 transition-all relative">
-                      <img
-                        src={buildQrCodeUrl(savedQrPassword)}
-                        alt="Password QR Code"
-                        className={`w-44 h-44 object-contain transition-all duration-200 ${
-                          revealPasswordQr ? '' : 'blur-md select-none'
-                        }`}
-                      />
-                      {!revealPasswordQr && (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="px-3 py-1.5 rounded-xl bg-slate-900/90 text-white text-xs font-semibold shadow-lg flex items-center space-x-1.5">
-                            <Eye className="w-3.5 h-3.5"/>
-                            <span>Tap to Reveal</span>
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-500 font-mono">••••••••••••</p>
-                    <p className="text-[11px] text-indigo-600 font-semibold">
-                      {revealPasswordQr ? 'Tap QR code to enlarge full-screen' : 'Blurred for shoulder-surfing protection'}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-xs text-slate-400 italic py-12">No Password QR generated yet.</p>
-                )}
-              </div>
-            </div>
-          )}
-        </section>
-      </main>
-    </div>
-  );
-}
+                                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs shadow-sm flex
