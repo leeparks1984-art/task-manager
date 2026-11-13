@@ -423,7 +423,7 @@ export default function App() {
     }
   };
 
-  // Foreground FCM Listener: Only shows in-app toast & chime (does NOT spawn a second OS banner)
+  // Foreground FCM Listener: Only shows in-app toast (does NOT spawn a duplicate OS banner)
   useEffect(() => {
     let unsubFCM = null;
     const setupForegroundMessaging = async () => {
@@ -467,7 +467,7 @@ export default function App() {
           serviceWorkerRegistration: swRegistration
         });
         if (currentToken && currentUser) {
-          // Remove this device's token from any other user profiles on the same phone to stop duplicate banners
+          // Strip this handset's token from any other user profiles to prevent multi-account duplicate banners
           for (const u of teamUsers) {
             if (u.id !== currentUser.id && Array.isArray(u.fcmTokens) && u.fcmTokens.includes(currentToken)) {
               const filtered = u.fcmTokens.filter((tk) => tk !== currentToken);
@@ -476,7 +476,6 @@ export default function App() {
               });
             }
           }
-          // Save deduplicated token to current user only
           const existingTokens = Array.isArray(currentUser.fcmTokens) ? currentUser.fcmTokens : [];
           const uniqueTokens = [...new Set([...existingTokens, currentToken])];
           const userDoc = doc(db, 'artifacts', appId, 'public', 'data', 'users', currentUser.id);
@@ -1405,21 +1404,11 @@ export default function App() {
     return {
       user: u,
       completedFirstTime,
-      rescuedHandovers: thescuedHandovers(tasks, u, didUserHandOverTask),
+      rescuedHandovers,
       handedOverCount,
       currentlyUncompleted
     };
   });
-
-  function thescuedHandovers(taskList, u, checkHandoverFn) {
-    return taskList.filter(
-      (t) =>
-        (t.status === 'archived' || t.status === 'pending_validation') &&
-        t.assigneeId === u.id &&
-        (Boolean(t.handoverFromName) || (Array.isArray(t.handoverHistory) && t.handoverHistory.length > 0)) &&
-        !checkHandoverFn(t, u)
-    ).length;
-  }
 
   // Tasks matching the Performance Review Table filter
   const performanceReviewTasks = tasks.filter((t) => {
@@ -2633,12 +2622,12 @@ export default function App() {
                                   </span>
                                 )}
                                 {!isInProgress && !isPaused && !isIncomplete && (
-                                  <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[11px] font-semibold">
+                                  <span className="px-2.5 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[11px] font-semibold">
                                     Not Started
                                   </span>
                                 )}
                                 {t.handoverFromName && (
-                                  <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-md text-[11px] font-semibold">
+                                  <span className="px-2.5 py-0.5 bg-orange-100 text-orange-800 rounded-md text-[11px] font-semibold">
                                     Handover from {t.handoverFromName}
                                   </span>
                                 )}
