@@ -1386,7 +1386,7 @@ export default function App() {
     ).length;
 
     // Handed Over Completed by This User (Stepped in to finish someone else's incomplete job)
-    constrescuedHandovers = tasks.filter(
+    const rescuedHandovers = tasks.filter(
       (t) =>
         (t.status === 'archived' || t.status === 'pending_validation') &&
         t.assigneeId === u.id &&
