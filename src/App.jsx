@@ -196,7 +196,6 @@ const playNotificationChime = () => {
   }
 };
 
-// Uses a deterministic notification tag so Android collapses duplicate alerts into 1 banner
 const triggerSystemNotification = async (title, body, uniqueTag = 'taskflow-alert') => {
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
@@ -292,6 +291,20 @@ export default function App() {
   const [perfFilterUserId, setPerfFilterUserId] = useState('all');
   const [perfFilterView, setPerfFilterView] = useState('all_issues');
 
+  // Calendar & Blackout State
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
+  const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
+  const [managerBlackoutMode, setManagerBlackoutMode] = useState(false);
+  const [blackoutDates, setBlackoutDates] = useState({});
+
+  // Request Form State
+  const [reqType, setReqType] = useState('Time Off / Holiday');
+  const [reqStartDate, setReqStartDate] = useState('');
+  const [reqEndDate, setReqEndDate] = useState('');
+  const [reqNote, setReqNote] = useState('');
+  const [managerReplyInputs, setManagerReplyInputs] = useState({});
+
   // Collapsible Accordion States for Supervisor Board
   const [openSections, setOpenSections] = useState({
     reassigned: true,
@@ -335,11 +348,6 @@ export default function App() {
   const [commentInputs, setCommentInputs] = useState({});
   const [lightboxImage, setLightboxImage] = useState(null);
   const [lightboxTitle, setLightboxTitle] = useState('');
-
-  const [reqType, setReqType] = useState('Time Off / Holiday');
-  const [reqDates, setReqDates] = useState('');
-  const [reqNote, setReqNote] = useState('');
-  const [managerReplyInputs, setManagerReplyInputs] = useState({});
 
   const [newUserName, setNewUserName] = useState('');
   const [newUserRole, setNewUserRole] = useState('colleague');
@@ -423,7 +431,7 @@ export default function App() {
     }
   };
 
-  // Foreground FCM Listener: Only shows in-app toast (does NOT spawn a duplicate OS banner)
+  // Foreground FCM Listener
   useEffect(() => {
     let unsubFCM = null;
     const setupForegroundMessaging = async () => {
@@ -467,7 +475,6 @@ export default function App() {
           serviceWorkerRegistration: swRegistration
         });
         if (currentToken && currentUser) {
-          // Strip this handset's token from any other user profiles to prevent multi-account duplicate banners
           for (const u of teamUsers) {
             if (u.id !== currentUser.id && Array.isArray(u.fcmTokens) && u.fcmTokens.includes(currentToken)) {
               const filtered = u.fcmTokens.filter((tk) => tk !== currentToken);
@@ -501,6 +508,32 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Load Blackout Dates from Firestore
+  useEffect(() => {
+    if (!fbUser) return;
+    const blackoutRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'blackouts');
+    const unsubscribe = onSnapshot(blackoutRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setBlackoutDates(docSnap.data().dates || {});
+      }
+    });
+    return () => unsubscribe();
+  }, [fbUser]);
+
+  const handleToggleBlackoutDate = async (dateStr) => {
+    if (!currentUser || currentUser.role !== 'manager') return;
+    const updated = { ...blackoutDates };
+    if (updated[dateStr]) {
+      delete updated[dateStr];
+      showToast("Blackout Removed", `${dateStr} is now available for booking.`);
+    } else {
+      updated[dateStr] = 'Management Embargo';
+      showToast("Date Blacked Out", `${dateStr} is now restricted.`);
+    }
+    setBlackoutDates(updated);
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'blackouts'), { dates: updated }, { merge: true });
+  };
 
   useEffect(() => {
     if (!fbUser) return;
@@ -581,8 +614,6 @@ export default function App() {
     : [];
   const unreadCount = unreadNotifications.length;
 
-  // Triple-banner fix: Only chime & show in-app toast when unread count increases.
-  // Only fallback to local triggerSystemNotification if FCM push is NOT enabled on this profile.
   useEffect(() => {
     if (!currentUser) {
       prevUnreadCountRef.current = null;
@@ -631,7 +662,6 @@ export default function App() {
           });
       }
 
-      // Deduplicate tokens so the same phone never gets pinged 2 or 3 times for one alert
       const uniqueTokens = [...new Set(targetTokens.filter(Boolean))];
 
       if (uniqueTokens.length > 0) {
@@ -802,7 +832,6 @@ export default function App() {
     showToast(wasPaused ? "Task Resumed" : "Task Started", `"${task.title}" is now In Progress.`);
   };
 
-  // Routine Pause: Logs context in pauseHistory, does NOT penalize colleague in handoverHistory
   const handleConfirmPauseTask = async (e) => {
     e.preventDefault();
     if (!pausingTask) return;
@@ -829,7 +858,6 @@ export default function App() {
     showToast("Task Paused", `Marked as paused: ${finalReason}`);
   };
 
-  // Incomplete / Shift Handover: Logs permanent entry in handoverHistory for performance review
   const handleConfirmIncompleteHandover = async (e) => {
     e.preventDefault();
     if (!handoverTask || !handoverNote.trim()) return;
@@ -883,7 +911,6 @@ export default function App() {
       ? delegatingTask.handoverFromName || delegatingTask.assigneeName
       : delegatingTask.handoverFromName || null;
 
-    // If task was started/paused/incomplete and is now being reassigned to someone else, record in handoverHistory
     let updatedHandoverHistory = [...(delegatingTask.handoverHistory || [])];
     if (wasStartedOrIncomplete) {
       const targetNames = targetColleagues.map((u) => u.name).join(', ');
@@ -1094,14 +1121,44 @@ export default function App() {
     }
   };
 
+  // Helper to expand date ranges for holiday requests
+  const getDatesInRange = (startDateStr, endDateStr) => {
+    if (!startDateStr) return [];
+    const start = new Date(startDateStr);
+    const end = endDateStr ? new Date(endDateStr) : new Date(startDateStr);
+    if (isNaN(start.getTime())) return [];
+    
+    const arr = [];
+    let current = new Date(start);
+    while (current <= (isNaN(end.getTime()) ? start : end)) {
+      arr.push(current.toISOString().split('T')[0]);
+      current.setDate(current.getDate() + 1);
+    }
+    return arr;
+  };
+
   const handleCreateRequest = async (e) => {
     e.preventDefault();
-    if (!reqNote.trim()) return;
+    if (!reqStartDate || !reqNote.trim()) {
+      showToast("Missing Info", "Please provide a start date and details.");
+      return;
+    }
+
+    // Check if any date in the requested range is blacked out
+    const requestedDates = getDatesInRange(reqStartDate, reqEndDate || reqStartDate);
+    const hasBlackout = requestedDates.some((dStr) => blackoutDates[dStr]);
+    if (hasBlackout && currentUser.role !== 'manager') {
+      showToast("Blackout Restricted", "Selected dates include a management blackout day. Please speak to Lee.");
+      return;
+    }
+
     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'requests'), {
       requesterId: currentUser.id,
       requesterName: currentUser.name,
       type: reqType,
-      dates: reqDates.trim(),
+      startDate: reqStartDate,
+      endDate: reqEndDate || reqStartDate,
+      dates: reqEndDate && reqEndDate !== reqStartDate ? `${reqStartDate} to ${reqEndDate}` : reqStartDate,
       note: reqNote.trim(),
       status: 'pending',
       managerReply: '',
@@ -1109,9 +1166,10 @@ export default function App() {
       createdAt: new Date().toISOString()
     });
     await sendNotification(null, 'supervisors', 'New Manager Request', `${currentUser.name} submitted a ${reqType} request.`);
-    setReqDates('');
+    setReqStartDate('');
+    setReqEndDate('');
     setReqNote('');
-    showToast("Request Sent", "Your request has been sent to management.");
+    showToast("Request Sent", "Your request and calendar block have been sent to management.");
   };
 
   const handleDecisionRequest = async (req, newStatus) => {
@@ -1374,8 +1432,6 @@ export default function App() {
   const reviewStaffList = teamUsers.filter((u) => u.role === 'colleague' || u.role === 'team_leader');
 
   const staffPerformanceMetrics = reviewStaffList.map((u) => {
-    // Completed First-Time: Finished/Validated by this user AND never handed over by them
-    // Routine pauses (breaks/checkouts) where the user resumed and completed it still count 100% here!
     const completedFirstTime = tasks.filter(
       (t) =>
         (t.status === 'archived' || t.status === 'pending_validation') &&
@@ -1384,7 +1440,6 @@ export default function App() {
         (!Array.isArray(t.handoverHistory) || t.handoverHistory.length === 0)
     ).length;
 
-    // Handed Over Completed by This User (Stepped in to finish someone else's incomplete job)
     const rescuedHandovers = tasks.filter(
       (t) =>
         (t.status === 'archived' || t.status === 'pending_validation') &&
@@ -1393,10 +1448,8 @@ export default function App() {
         !didUserHandOverTask(t, u)
     ).length;
 
-    // Handed Over / Left Incomplete by This User
     const handedOverCount = tasks.filter((t) => didUserHandOverTask(t, u)).length;
 
-    // Currently Uncompleted on Their Active List Right Now
     const currentlyUncompleted = tasks.filter(
       (t) => t.status === 'active' && t.assigneeId === u.id
     ).length;
@@ -1410,7 +1463,6 @@ export default function App() {
     };
   });
 
-  // Tasks matching the Performance Review Table filter
   const performanceReviewTasks = tasks.filter((t) => {
     const isUncompletedActive = t.status === 'active';
     const hasHandoverRecord = wasTaskHandedOver(t);
@@ -1919,7 +1971,7 @@ export default function App() {
               activeTab === 'requests' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
             }`}>
             <Calendar className="w-3.5 h-3.5"/>
-            <span>{isSupervisor ? `Colleague Requests (${pendingRequestsCount})` : 'Manager Requests'}</span>
+            <span>{isSupervisor ? `Colleague Requests (${pendingRequestsCount})` : 'Holiday & Requests'}</span>
           </button>
 
           {isManager && (
@@ -2198,7 +2250,7 @@ export default function App() {
                 )}
               </div>
 
-              {/* 3. COLLAPSIBLE CARD: IN PROGRESS (WORKING ON IT NOW) */}
+              {/* 3. COLLAPSIBLE CARD: IN PROGRESS */}
               <div className="bg-white rounded-2xl border border-blue-200 overflow-hidden shadow-xs">
                 <button
                   type="button"
@@ -2231,7 +2283,7 @@ export default function App() {
                 )}
               </div>
 
-              {/* 4. COLLAPSIBLE CARD: ALLOCATED TASKS (NOT STARTED YET) */}
+              {/* 4. COLLAPSIBLE CARD: ALLOCATED TASKS */}
               <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
                 <button
                   type="button"
@@ -2264,7 +2316,7 @@ export default function App() {
                 )}
               </div>
 
-              {/* 5. COLLAPSIBLE CARD: VALIDATED & ARCHIVED HISTORY LOG */}
+              {/* 5. COLLAPSIBLE CARD: VALIDATED & ARCHIVED */}
               <div className="bg-white rounded-2xl border border-emerald-200 overflow-hidden shadow-xs">
                 <button
                   type="button"
@@ -2544,7 +2596,7 @@ export default function App() {
                           </div>
                         ) : null}
 
-                        {/* Context-Only Routine Pause Log (Does not count as handover) */}
+                        {/* Context-Only Routine Pause Log */}
                         {Array.isArray(t.pauseHistory) && t.pauseHistory.length > 0 && (
                           <div className="flex flex-wrap items-center gap-1.5 pt-1">
                             <span className="text-[10px] font-semibold text-slate-400">Routine Pauses (Context Only):</span>
@@ -2564,222 +2616,261 @@ export default function App() {
           </div>
         )}
 
-        {/* ================= PERSONAL TASK LIST (COLLEAGUES & TEAM LEADERS) ================= */}
-        {((activeTab === 'tasks' && !isSupervisor) || activeTab === 'my_tl_tasks') && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 space-y-6">
-              <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <div>
-                    <h3 className="font-bold text-slate-900 text-base">
-                      {currentUser.role === 'team_leader' ? 'Tasks Assigned to Me by Manager' : 'My Active Tasks'}
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Tap Start Task when you begin, Pause if pulled away, or Handover if you cannot finish before your shift ends.
-                    </p>
-                  </div>
-                  <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-xs font-bold">
-                    {myAssignedTasks.length} Active
-                  </span>
-                </div>
-
-                {myAssignedTasks.length === 0 ? (
-                  <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                    <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto mb-3"/>
-                    <h4 className="font-bold text-slate-700 text-sm">All caught up!</h4>
-                    <p className="text-xs text-slate-400 mt-1">You have no active tasks on your list right now.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {myAssignedTasks.map((t) => {
-                      const isUrgent = t.priority === 'urgent';
-                      const isInProgress = t.progressStatus === 'in_progress';
-                      const isPaused = t.progressStatus === 'paused';
-                      const isIncomplete = t.progressStatus === 'incomplete';
-
-                      return (
-                        <div
-                          key={t.id}
-                          className={`p-5 rounded-xl border space-y-4 ${
-                            isUrgent ? 'bg-rose-50/30 border-rose-300' : isPaused ? 'bg-amber-50/30 border-amber-300' : 'bg-white border-slate-200'
-                          }`}>
-                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                            <div className="space-y-1.5">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                {isUrgent && (
-                                  <span className="px-2.5 py-0.5 bg-rose-600 text-white rounded-md text-[11px] font-bold uppercase">
-                                    Priority / First Job
-                                  </span>
-                                )}
-                                {isInProgress && (
-                                  <span className="px-2.5 py-0.5 bg-blue-100 text-blue-800 rounded-md text-[11px] font-bold">
-                                    In Progress
-                                  </span>
-                                )}
-                                {isPaused && (
-                                  <span className="px-2.5 py-0.5 bg-amber-200 text-amber-900 rounded-md text-[11px] font-bold">
-                                    Paused: {t.pauseReason}
-                                  </span>
-                                )}
-                                {!isInProgress && !isPaused && !isIncomplete && (
-                                  <span className="px-2.5 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[11px] font-semibold">
-                                    Not Started
-                                  </span>
-                                )}
-                                {t.handoverFromName && (
-                                  <span className="px-2.5 py-0.5 bg-orange-100 text-orange-800 rounded-md text-[11px] font-semibold">
-                                    Handover from {t.handoverFromName}
-                                  </span>
-                                )}
-                              </div>
-                              <h4 className="font-bold text-slate-900 text-base">{t.title}</h4>
-                              <p className="text-xs text-slate-600 whitespace-pre-line">{t.description}</p>
-                              {t.handoverNote && (
-                                <p className="text-xs font-medium text-orange-900 bg-orange-50 p-2 rounded-lg border border-orange-200">
-                                  Handover Note: "{t.handoverNote}"
-                                </p>
-                              )}
-                            </div>
-
-                            <div className="flex flex-wrap sm:flex-col sm:items-end gap-2 shrink-0">
-                              {(!isInProgress || isPaused) && (
-                                <button
-                                  onClick={() => handleStartOrResumeTask(t)}
-                                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs flex items-center space-x-1.5">
-                                  <Play className="w-3.5 h-3.5 fill-current"/>
-                                  <span>{isPaused ? 'Resume Task' : 'Start Task'}</span>
-                                </button>
-                              )}
-                              {isInProgress && (
-                                <button
-                                  onClick={() => { setPausingTask(t); setPauseReason(PAUSE_REASONS[0]); setCustomPauseReason(''); }}
-                                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl text-xs flex items-center space-x-1.5">
-                                  <Pause className="w-3.5 h-3.5"/>
-                                  <span>Pause Task</span>
-                                </button>
-                              )}
-                              {(isInProgress || isPaused) && !isIncomplete && (
-                                <button
-                                  onClick={() => { setHandoverTask(t); setHandoverNote(''); }}
-                                  className="px-3.5 py-1.5 bg-orange-50 text-orange-700 border border-orange-200 font-semibold rounded-xl text-xs">
-                                  Handover / Incomplete
-                                </button>
-                              )}
-                              <button
-                                onClick={() => setCompletingTask(t)}
-                                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center space-x-2">
-                                <Camera className="w-4 h-4"/>
-                                <span>Complete & Add Photo</span>
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2 pt-3 border-t border-slate-100">
-                            {(t.comments || []).map((c) => (
-                              <div key={c.id} className="text-xs bg-slate-50 p-2 rounded-lg">
-                                <span className="font-bold">{c.authorName}: </span>
-                                <span>{c.text}</span>
-                              </div>
-                            ))}
-                            <div className="flex space-x-2">
-                              <input
-                                type="text"
-                                value={commentInputs[t.id] || ''}
-                                onChange={(e) => setCommentInputs((prev) => ({ ...prev, [t.id]: e.target.value }))}
-                                placeholder="Leave a comment..."
-                                className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs"
-                              />
-                              <button onClick={() => handleAddComment(t)} className="px-3 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-semibold">
-                                Send
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-3">
-                <h3 className="font-bold text-slate-900 text-sm">Awaiting Validation ({myPendingTasks.length})</h3>
-                {myPendingTasks.map((t) => (
-                  <div key={t.id} className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs font-bold">
-                    {t.title}
-                  </div>
-                ))}
-              </div>
-              <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-3">
-                <h3 className="font-bold text-slate-900 text-sm">Validated & Completed ({myArchivedTasks.length})</h3>
-                {myArchivedTasks.map((t) => (
-                  <div key={t.id} className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs font-bold">
-                    {t.title}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ================= REQUESTS TAB ================= */}
+        {/* ================= REQUESTS TAB & HOLIDAY CALENDAR ================= */}
         {activeTab === 'requests' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-4">
-              <h2 className="font-bold text-slate-900 text-base">Submit Request to Manager</h2>
+            {/* Left Column: Request Form */}
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-4 shadow-xs">
+              <h2 className="font-bold text-slate-900 text-base">Submit Holiday or Request</h2>
               <form onSubmit={handleCreateRequest} className="space-y-4">
-                <select value={reqType} onChange={(e) => setReqType(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white">
-                  <option value="Time Off / Holiday">Time Off / Holiday</option>
-                  <option value="Shift Swap">Shift Swap</option>
-                  <option value="Equipment / Uniform">Equipment / Uniform</option>
-                  <option value="General Manager Request">General Manager Request</option>
-                </select>
-                <input
-                  type="text"
-                  value={reqDates}
-                  onChange={(e) => setReqDates(e.target.value)}
-                  placeholder="Relevant Dates (Optional)"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                />
-                <textarea
-                  rows="3"
-                  required
-                  value={reqNote}
-                  onChange={(e) => setReqNote(e.target.value)}
-                  placeholder="Request details..."
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                />
-                <button type="submit" className="w-full py-3 bg-indigo-600 text-white font-semibold rounded-xl text-sm">
-                  Send Request
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-600 uppercase">Request Type</label>
+                  <select
+                    value={reqType}
+                    onChange={(e) => setReqType(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white font-medium">
+                    <option value="Time Off / Holiday">Time Off / Holiday</option>
+                    <option value="Shift Swap">Shift Swap</option>
+                    <option value="Equipment / Uniform">Equipment / Uniform</option>
+                    <option value="General Manager Request">General Manager Request</option>
+                  </select>
+                </div>
+
+                {reqType === 'Time Off / Holiday' ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-slate-600 uppercase">Start Date</label>
+                      <input
+                        type="date"
+                        required
+                        value={reqStartDate}
+                        onChange={(e) => setReqStartDate(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-slate-600 uppercase">End Date</label>
+                      <input
+                        type="date"
+                        value={reqEndDate}
+                        onChange={(e) => setReqEndDate(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <label className="block text-xs font-semibold text-slate-600 uppercase">Relevant Dates</label>
+                    <input
+                      type="text"
+                      value={reqStartDate}
+                      onChange={(e) => setReqStartDate(e.target.value)}
+                      placeholder="e.g. Next Tuesday"
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm"
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-semibold text-slate-600 uppercase">Details / Reason</label>
+                  <textarea
+                    rows="3"
+                    required
+                    value={reqNote}
+                    onChange={(e) => setReqNote(e.target.value)}
+                    placeholder="Request details..."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-sm shadow-md">
+                  Submit Request & Block Calendar
                 </button>
               </form>
             </div>
 
-            <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
-              <h2 className="font-bold text-slate-900 text-base">{isSupervisor ? 'All Team Requests' : 'My Requests'}</h2>
-              {(isSupervisor ? requests : requests.filter((r) => r.requesterId === currentUser.id)).map((r) => (
-                <div key={r.id} className="p-4 rounded-xl border border-slate-200 space-y-2 bg-slate-50">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-indigo-600">{r.requesterName} • {r.type} {r.dates ? `(${r.dates})` : ''}</span>
-                    <span className="font-bold uppercase">{r.status}</span>
+            {/* Right 2 Columns: Interactive Mobile Holiday Calendar & List */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Mobile-Optimized Holiday Calendar Grid */}
+              <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">Team Holiday & Availability Calendar</h3>
+                    <p className="text-xs text-slate-500">Green = Approved, Amber = Pending, Dark = Blackout</p>
                   </div>
-                  <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border">{r.note}</p>
-                  {isSupervisor && r.status === 'pending' && (
-                    <div className="flex gap-2 pt-1">
-                      <input
-                        type="text"
-                        value={managerReplyInputs[r.id] || ''}
-                        onChange={(e) => setManagerReplyInputs((prev) => ({ ...prev, [r.id]: e.target.value }))}
-                        placeholder="Reply note..."
-                        className="flex-1 px-3 py-1.5 rounded-lg border text-xs bg-white"
-                      />
-                      <button onClick={() => handleDecisionRequest(r, 'approved')} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Approve</button>
-                      <button onClick={() => handleDecisionRequest(r, 'declined')} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-semibold">Decline</button>
+                  
+                  <div className="flex items-center space-x-2">
+                    {isManager && (
+                      <button
+                        type="button"
+                        onClick={() => setManagerBlackoutMode(!managerBlackoutMode)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${
+                          managerBlackoutMode ? 'bg-rose-600 text-white border-rose-600' : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}>
+                        {managerBlackoutMode ? '🔴 Blackout Mode ON (Tap Days to Block)' : '🔒 Manage Blackouts'}
+                      </button>
+                    )}
+                    
+                    <div className="flex items-center space-x-1 bg-slate-100 rounded-xl p-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(calendarYear - 1); }
+                          else { setCalendarMonth(calendarMonth - 1); }
+                        }}
+                        className="p-1.5 hover:bg-white rounded-lg text-slate-700 font-bold text-xs">
+                        &lt;
+                      </button>
+                      <span className="px-3 text-xs font-bold text-slate-800">
+                        {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][calendarMonth]} {calendarYear}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(calendarYear + 1); }
+                          else { setCalendarMonth(calendarMonth + 1); }
+                        }}
+                        className="p-1.5 hover:bg-white rounded-lg text-slate-700 font-bold text-xs">
+                        &gt;
+                      </button>
                     </div>
-                  )}
+                  </div>
                 </div>
-              ))}
+
+                {/* 7-Column Grid Header */}
+                <div className="grid grid-cols-7 gap-1 text-center font-bold text-[11px] text-slate-400 uppercase">
+                  {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => <div key={d} className="py-1">{d}</div>)}
+                </div>
+
+                {/* Calendar Day Cells */}
+                <div className="grid grid-cols-7 gap-1">
+                  {Array.from({ length: (new Date(calendarYear, calendarMonth, 1).getDay() + 6) % 7 }).map((_, i) => (
+                    <div key={`empty-${i}`} className="h-20 sm:h-24 bg-slate-50/40 rounded-xl border border-transparent"></div>
+                  ))}
+
+                  {(() => {
+                    const days = [];
+                    const date = new Date(calendarYear, calendarMonth, 1);
+                    while (date.getMonth() === calendarMonth) {
+                      days.push(new Date(date));
+                      date.setDate(date.getDate() + 1);
+                    }
+
+                    // Map all approved and pending holidays
+                    const holidayMap = {};
+                    requests.forEach((req) => {
+                      if (req.type === 'Time Off / Holiday' && (req.status === 'approved' || req.status === 'pending')) {
+                        const datesArr = getDatesInRange(req.startDate || req.dates, req.endDate || req.startDate || req.dates);
+                        datesArr.forEach((dStr) => {
+                          if (!holidayMap[dStr]) holidayMap[dStr] = [];
+                          holidayMap[dStr].push({
+                            name: req.requesterName,
+                            status: req.status
+                          });
+                        });
+                      }
+                    });
+
+                    return days.map((dateObj) => {
+                      const dateStr = dateObj.toISOString().split('T')[0];
+                      const dayHolidays = holidayMap[dateStr] || [];
+                      const isBlackedOut = Boolean(blackoutDates[dateStr]);
+                      const isSelected = selectedCalendarDay === dateStr;
+
+                      return (
+                        <div
+                          key={dateStr}
+                          onClick={() => {
+                            if (managerBlackoutMode) {
+                              handleToggleBlackoutDate(dateStr);
+                            } else {
+                              setSelectedCalendarDay(dateStr);
+                            }
+                          }}
+                          className={`h-20 sm:h-24 p-1.5 rounded-xl border flex flex-col justify-between cursor-pointer transition-all overflow-hidden ${
+                            isBlackedOut
+                              ? 'bg-slate-900 text-white border-slate-900'
+                              : isSelected
+                              ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-500/20'
+                              : 'bg-white hover:bg-slate-50 border-slate-200'
+                          }`}>
+                          <div className="flex items-center justify-between">
+                            <span className={`text-xs font-bold ${isBlackedOut ? 'text-white' : 'text-slate-800'}`}>
+                              {dateObj.getDate()}
+                            </span>
+                            {isBlackedOut && <span className="text-[9px] bg-rose-600 text-white px-1 rounded">Embargo</span>}
+                          </div>
+
+                          <div className="space-y-1 overflow-y-auto max-h-12 sm:max-h-14">
+                            {dayHolidays.map((h, idx) => (
+                              <div
+                                key={idx}
+                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold truncate flex items-center justify-between ${
+                                  h.status === 'approved'
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                    : 'bg-amber-100 text-amber-900 border border-amber-200'
+                                }`}>
+                                <span className="truncate">{h.name}</span>
+                                <span className="text-[8px] opacity-75">{h.status === 'approved' ? '✓' : '…'}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+
+                {/* Selected Day Details Drawer */}
+                {selectedCalendarDay && (
+                  <div className="p-3.5 bg-indigo-50/70 rounded-xl border border-indigo-200 text-xs flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-indigo-900">Selected Date: {selectedCalendarDay}</span>
+                      <p className="text-slate-600 mt-0.5">
+                        {blackoutDates[selectedCalendarDay] ? '⚠️ Management Blackout Active' : ''}
+                        {(!blackoutDates[selectedCalendarDay] && (!requests.some(r => getDatesInRange(r.startDate || r.dates, r.endDate || r.startDate || r.dates).includes(selectedCalendarDay) && (r.status === 'approved' || r.status === 'pending')))) ? ' No staff off on this day.' : ''}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCalendarDay(null)}
+                      className="text-slate-400 hover:text-slate-700 font-bold px-2 py-1">
+                      ✕
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Requests Management List */}
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4 shadow-xs">
+                <h2 className="font-bold text-slate-900 text-base">{isSupervisor ? 'All Team Requests' : 'My Requests'}</h2>
+                <div className="space-y-3">
+                  {(isSupervisor ? requests : requests.filter((r) => r.requesterId === currentUser.id)).map((r) => (
+                    <div key={r.id} className="p-4 rounded-xl border border-slate-200 space-y-2 bg-slate-50">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-indigo-600">{r.requesterName} • {r.type} {r.dates ? `(${r.dates})` : ''}</span>
+                        <span className="font-bold uppercase">{r.status}</span>
+                      </div>
+                      <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border">{r.note}</p>
+                      {isSupervisor && r.status === 'pending' && (
+                        <div className="flex gap-2 pt-1">
+                          <input
+                            type="text"
+                            value={managerReplyInputs[r.id] || ''}
+                            onChange={(e) => setManagerReplyInputs((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                            placeholder="Reply note..."
+                            className="flex-1 px-3 py-1.5 rounded-lg border text-xs bg-white"
+                          />
+                          <button onClick={() => handleDecisionRequest(r, 'approved')} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Approve</button>
+                          <button onClick={() => handleDecisionRequest(r, 'declined')} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-semibold">Decline</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -2855,7 +2946,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ================= BOTTOM OF PROFILE: ASDA TERMINAL LOGIN QR CODES ================= */}
+        {/* ================= TERMINAL LOGIN QR CODES ================= */}
         <section className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-100">
             <div className="flex items-center space-x-3">
