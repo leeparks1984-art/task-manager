@@ -203,7 +203,6 @@ const getTodayIsoDate = () => {
   return `${y}-${m}-${d}`;
 };
 
-// Calculate deadline urgency badge for Complete By dates
 const getDueDateBadgeInfo = (dueDateStr) => {
   if (!dueDateStr) return null;
   const todayStr = getTodayIsoDate();
@@ -396,13 +395,24 @@ export default function App() {
   const [perfFilterUserId, setPerfFilterUserId] = useState('all');
   const [perfFilterView, setPerfFilterView] = useState('all_issues');
 
-  // Calendar & Blackout State
+  // Holiday Calendar & Blackout State
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
   const [managerBlackoutMode, setManagerBlackoutMode] = useState(false);
   const [blackoutDates, setBlackoutDates] = useState({});
   const [lastAutoDropDate, setLastAutoDropDate] = useState(null);
+
+  // Seasonal Availability Tab State
+  const [seasonalList, setSeasonalList] = useState([]);
+  const [seasonalYear, setSeasonalYear] = useState(new Date().getFullYear());
+  const [seasonalMonth, setSeasonalMonth] = useState(new Date().getMonth());
+  const [selectedSeasonalDate, setSelectedSeasonalDate] = useState(getTodayIsoDate());
+  const [seasonalMinStart, setSeasonalMinStart] = useState('06:00');
+  const [seasonalMaxFinish, setSeasonalMaxFinish] = useState('22:00');
+  const [seasonalStatus, setSeasonalStatus] = useState('available'); // 'available' | 'unavailable'
+  const [seasonalNote, setSeasonalNote] = useState('');
+  const [seasonalFilterUserId, setSeasonalFilterUserId] = useState('all');
 
   // Request Form State
   const [reqType, setReqType] = useState('Time Off / Holiday');
@@ -411,7 +421,7 @@ export default function App() {
   const [reqNote, setReqNote] = useState('');
   const [managerReplyInputs, setManagerReplyInputs] = useState({});
 
-  // Collapsible Accordion States for Supervisor Board (Includes Open Task Pool)
+  // Collapsible Accordion States for Supervisor Board
   const [openSections, setOpenSections] = useState({
     taskPool: true,
     reassigned: true,
@@ -430,7 +440,7 @@ export default function App() {
   const [requests, setRequests] = useState([]);
   const [notifications, setNotifications] = useState([]);
 
-  // Assign Task Form State (Now includes Open Pool Mode & Complete By Date)
+  // Assign Task Form State
   const [selectedPreset, setSelectedPreset] = useState('custom');
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
@@ -499,6 +509,25 @@ export default function App() {
       console.error("Error loading QR:", err);
     }
   }, [currentUser?.id]);
+
+  // Populate Seasonal Availability Form when user taps a date on the Seasonal Calendar
+  useEffect(() => {
+    if (!currentUser || !selectedSeasonalDate) return;
+    const existing = seasonalList.find(
+      (item) => item.userId === currentUser.id && item.date === selectedSeasonalDate
+    );
+    if (existing) {
+      setSeasonalMinStart(existing.minStart || '06:00');
+      setSeasonalMaxFinish(existing.maxFinish || '22:00');
+      setSeasonalStatus(existing.status || 'available');
+      setSeasonalNote(existing.note || '');
+    } else {
+      setSeasonalMinStart('06:00');
+      setSeasonalMaxFinish('22:00');
+      setSeasonalStatus('available');
+      setSeasonalNote('');
+    }
+  }, [selectedSeasonalDate, currentUser?.id, seasonalList]);
 
   const handleSaveEmailQr = (e) => {
     e.preventDefault();
@@ -664,6 +693,7 @@ export default function App() {
     const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
     const requestsRef = collection(db, 'artifacts', appId, 'public', 'data', 'requests');
     const notifsRef = collection(db, 'artifacts', appId, 'public', 'data', 'notifications');
+    const seasonalRef = collection(db, 'artifacts', appId, 'public', 'data', 'seasonalAvailability');
 
     const unsubUsers = onSnapshot(usersRef, async (snapshot) => {
       if (snapshot.empty) {
@@ -700,11 +730,19 @@ export default function App() {
       setNotifications(loaded);
     });
 
+    const unsubSeasonal = onSnapshot(seasonalRef, (snapshot) => {
+      const loaded = [];
+      snapshot.forEach((d) => loaded.push({ id: d.id, ...d.data() }));
+      loaded.sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.userName || '').localeCompare(b.userName || ''));
+      setSeasonalList(loaded);
+    });
+
     return () => {
       unsubUsers();
       unsubTasks();
       unsubReqs();
       unsubNotifs();
+      unsubSeasonal();
     };
   }, [fbUser]);
 
@@ -837,6 +875,48 @@ export default function App() {
     } catch (err) {
       console.error("Notification error:", err);
     }
+  };
+
+  // ==========================================
+  // SEASONAL AVAILABILITY HANDLERS
+  // ==========================================
+  const handleSaveSeasonalAvailability = async (e) => {
+    e.preventDefault();
+    if (!currentUser || !selectedSeasonalDate) return;
+
+    if (seasonalStatus === 'available' && (!seasonalMinStart || !seasonalMaxFinish)) {
+      showToast("Times Required", "Please enter both your minimum start time and maximum finish time.");
+      return;
+    }
+
+    const docId = `${currentUser.id}_${selectedSeasonalDate}`;
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'seasonalAvailability', docId), {
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      userColor: currentUser.color || 'bg-indigo-600',
+      date: selectedSeasonalDate,
+      status: seasonalStatus,
+      minStart: seasonalStatus === 'available' ? seasonalMinStart : '',
+      maxFinish: seasonalStatus === 'available' ? seasonalMaxFinish : '',
+      note: seasonalNote.trim(),
+      updatedAt: new Date().toISOString()
+    });
+
+    showToast(
+      "Availability Saved",
+      seasonalStatus === 'available'
+        ? `Saved ${selectedSeasonalDate}: ${seasonalMinStart} – ${seasonalMaxFinish}`
+        : `Marked ${selectedSeasonalDate} as Unavailable.`
+    );
+  };
+
+  const handleClearSeasonalAvailability = async (targetUserId, dateStr) => {
+    const uid = targetUserId || currentUser?.id;
+    if (!uid || !dateStr) return;
+    const docId = `${uid}_${dateStr}`;
+    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'seasonalAvailability', docId));
+    showToast("Availability Cleared", `Removed availability entry for ${dateStr}.`);
   };
 
   // ==========================================
@@ -1059,7 +1139,6 @@ export default function App() {
     const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
     const isUrgent = taskPriority === 'urgent';
 
-    // Mode 1: Drop into Supervisor Open Task Pool (Team Leaders Claim)
     if (isPoolTaskMode) {
       if (!taskDueDate) {
         showToast("Complete By Date Required", "Please pick a 'Complete By' date for the Open Pool task.");
@@ -1117,7 +1196,6 @@ export default function App() {
       return;
     }
 
-    // Mode 2: Assign directly to selected staff
     if (taskAssigneeIds.length === 0) {
       showToast("Select Assignee", "Please tick at least one person or switch to Open Task Pool.");
       return;
@@ -1178,7 +1256,6 @@ export default function App() {
     showToast("Task Assigned", `Assigned to ${selectedUsers.map((u) => u.name).join(', ')}`);
   };
 
-  // Team Leader (or Manager) claims a task from the Open Pool for themselves or assigns it to a colleague
   const handleClaimPoolTask = async (poolTask, targetUserId) => {
     const targetUser = teamUsers.find((u) => u.id === (targetUserId || currentUser.id));
     if (!targetUser) return;
@@ -1676,7 +1753,7 @@ export default function App() {
             <div className="w-14 h-14 bg-gradient-to-tr from-indigo-500 to-violet-500 rounded-2xl mx-auto flex items-center justify-center shadow-lg">
               <Layers className="w-7 h-7 text-white"/>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight">TaskFlow Team Portal</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Grocery Team Portal</h1>
             <p className="text-xs text-indigo-200">Select your name below to log into your private workspace</p>
           </div>
 
@@ -1727,7 +1804,7 @@ export default function App() {
                     </div>
                     <div className="text-left">
                       <h3 className="font-bold text-sm">{u.name}</h3>
-                      <p className="text-[11px] text-indigo-200">Full Store Oversight, Validation & User Admin</p>
+                      <p className="text-[11px] text-indigo-200">Grocery Oversight, Validation & User Admin</p>
                     </div>
                   </div>
                   <ArrowRight className="w-4 h-4 text-indigo-200"/>
@@ -1803,7 +1880,6 @@ export default function App() {
   const myPendingTasks = tasks.filter((t) => t.assigneeId === currentUser.id && t.status === 'pending_validation');
   const myArchivedTasks = tasks.filter((t) => t.assigneeId === currentUser.id && t.status === 'archived');
 
-  // Unclaimed Open Task Pool (Visible to Manager & Team Leaders only)
   const openPoolTasks = sortPoolTasksByDeadline(tasks.filter((t) => t.status === 'open_pool'));
 
   const allActiveTasks = sortTasksByPriorityAndDate(tasks.filter((t) => t.status === 'active'));
@@ -2255,7 +2331,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Task Completion Modal (Supports Multiple Proof Photos) */}
+      {/* Task Completion Modal */}
       {completingTask && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
@@ -2359,7 +2435,7 @@ export default function App() {
               <Layers className="w-5 h-5"/>
             </div>
             <div>
-              <h1 className="font-bold text-base text-slate-900 leading-tight">TaskFlow Pro</h1>
+              <h1 className="font-bold text-base text-slate-900 leading-tight">Grocery Task Manager</h1>
               <p className="text-[11px] text-slate-500 font-medium capitalize">
                 {currentUser.name} • {(currentUser.role || 'colleague').replace('_', ' ')} • {todayDayCode}
               </p>
@@ -2484,6 +2560,16 @@ export default function App() {
             <span>{isSupervisor ? `Holiday & Requests (${pendingRequestsCount})` : 'Holiday & Requests'}</span>
           </button>
 
+          {/* NEW SEPARATE TAB: SEASONAL AVAILABILITY */}
+          <button
+            onClick={() => setActiveTab('seasonal')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 shrink-0 ${
+              activeTab === 'seasonal' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+            }`}>
+            <Clock className="w-3.5 h-3.5"/>
+            <span>Seasonal Availability</span>
+          </button>
+
           {isManager && (
             <button
               onClick={() => setActiveTab('users')}
@@ -2502,7 +2588,6 @@ export default function App() {
         {/* ================= SUPERVISOR DASHBOARD WITH OPEN POOL & COLLAPSIBLE CARDS ================= */}
         {activeTab === 'tasks' && isSupervisor && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Left Column: Assign New Task or Drop into Pool Form */}
             <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-5 shadow-xs">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center space-x-2.5">
@@ -2521,7 +2606,6 @@ export default function App() {
               </div>
 
               <form onSubmit={handleCreateTask} className="space-y-4">
-                {/* Assignment Mode Toggle: Specific Staff vs. Open Task Pool */}
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-slate-600 uppercase">Assignment Destination</label>
                   <div className="grid grid-cols-2 gap-2">
@@ -2708,7 +2792,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Multiple Reference Photos Section */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-600 uppercase">
@@ -2784,9 +2867,8 @@ export default function App() {
               </form>
             </div>
 
-            {/* Right 2 Columns: Collapsible Accordion Cards (Starts with Open Task Pool) */}
             <div className="lg:col-span-2 space-y-4">
-              {/* 0. COLLAPSIBLE CARD: WEEKLY / MONTHLY OPEN TASK POOL (SUPERVISORS ONLY) */}
+              {/* 0. COLLAPSIBLE CARD: WEEKLY / MONTHLY OPEN TASK POOL */}
               <div className="bg-white rounded-2xl border-2 border-violet-300 overflow-hidden shadow-xs">
                 <button
                   type="button"
@@ -3196,7 +3278,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Colleague Scorecards Grid */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -3261,7 +3342,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Filter Bar for Detailed Log */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
                 <div className="flex flex-wrap gap-1.5">
                   <button
@@ -3307,7 +3387,6 @@ export default function App() {
                 </select>
               </div>
 
-              {/* Detailed Audit List */}
               <div className="space-y-3">
                 {performanceReviewTasks.length === 0 ? (
                   <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
@@ -3869,6 +3948,320 @@ export default function App() {
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= NEW SEPARATE TAB: SEASONAL AVAILABILITY CALENDAR ================= */}
+        {activeTab === 'seasonal' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Left Column: Tap-a-Day Availability Input Form */}
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-5 shadow-xs">
+              <div className="flex items-center space-x-3 pb-3 border-b border-slate-100">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center">
+                  <Clock className="w-5 h-5"/>
+                </div>
+                <div>
+                  <h2 className="font-bold text-slate-900 text-base">Declare Seasonal Availability</h2>
+                  <p className="text-xs text-slate-500">Tap any day on the calendar to set your start & finish window</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveSeasonalAvailability} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Selected Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={selectedSeasonalDate}
+                    onChange={(e) => setSelectedSeasonalDate(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-indigo-300 bg-indigo-50/40 text-sm font-bold text-indigo-950"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Availability Status</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSeasonalStatus('available')}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
+                        seasonalStatus === 'available'
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-slate-50 text-slate-600 border-slate-200'
+                      }`}>
+                      Available to Work
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSeasonalStatus('unavailable')}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
+                        seasonalStatus === 'unavailable'
+                          ? 'bg-rose-600 text-white border-rose-600'
+                          : 'bg-slate-50 text-slate-600 border-slate-200'
+                      }`}>
+                      Unavailable
+                    </button>
+                  </div>
+                </div>
+
+                {seasonalStatus === 'available' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-slate-600 uppercase">Minimum Start Time</label>
+                      <input
+                        type="time"
+                        required
+                        value={seasonalMinStart}
+                        onChange={(e) => setSeasonalMinStart(e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-slate-50"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-slate-600 uppercase">Maximum Finish Time</label>
+                      <input
+                        type="time"
+                        required
+                        value={seasonalMaxFinish}
+                        onChange={(e) => setSeasonalMaxFinish(e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold bg-slate-50"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Optional Note</label>
+                  <input
+                    type="text"
+                    value={seasonalNote}
+                    onChange={(e) => setSeasonalNote(e.target.value)}
+                    placeholder="e.g. School run before 9am / Can do overtime"
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs"
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs shadow-md">
+                    Save Availability for {selectedSeasonalDate}
+                  </button>
+                  {seasonalList.some((item) => item.userId === currentUser.id && item.date === selectedSeasonalDate) && (
+                    <button
+                      type="button"
+                      onClick={() => handleClearSeasonalAvailability(currentUser.id, selectedSeasonalDate)}
+                      className="px-3.5 py-3 bg-rose-50 hover:bg-rose-100 text-rose-600 font-semibold rounded-xl text-xs">
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
+
+            {/* Right 2 Columns: Interactive Seasonal Availability Calendar */}
+            <div className="lg:col-span-2 space-y-6">
+              <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">
+                      {isSupervisor ? 'Team Seasonal Availability Calendar (All Staff)' : 'My Seasonal Availability Calendar'}
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      {isSupervisor
+                        ? 'Supervisors see everyone’s declared start & finish windows. Tap any day to inspect or enter your own.'
+                        : 'Tap any date below to enter or update your earliest start and latest finish time.'}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {isSupervisor && (
+                      <select
+                        value={seasonalFilterUserId}
+                        onChange={(e) => setSeasonalFilterUserId(e.target.value)}
+                        className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold bg-slate-50">
+                        <option value="all">All Staff ({teamUsers.length})</option>
+                        {teamUsers.map((u) => (
+                          <option key={u.id} value={u.id}>{u.name}</option>
+                        ))}
+                      </select>
+                    )}
+
+                    <div className="flex items-center space-x-1 bg-slate-100 rounded-xl p-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (seasonalMonth === 0) { setSeasonalMonth(11); setSeasonalYear(seasonalYear - 1); }
+                          else { setSeasonalMonth(seasonalMonth - 1); }
+                        }}
+                        className="px-2.5 py-1 hover:bg-white rounded-lg text-slate-700 font-bold text-xs">
+                        Prev
+                      </button>
+                      <span className="px-2 text-xs font-bold text-slate-800">
+                        {MONTH_NAMES[seasonalMonth]} {seasonalYear}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (seasonalMonth === 11) { setSeasonalMonth(0); setSeasonalYear(seasonalYear + 1); }
+                          else { setSeasonalMonth(seasonalMonth + 1); }
+                        }}
+                        className="px-2.5 py-1 hover:bg-white rounded-lg text-slate-700 font-bold text-xs">
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 7-Column Weekday Header */}
+                <div className="grid grid-cols-7 gap-1 text-center font-bold text-[10px] sm:text-[11px] text-slate-400 uppercase">
+                  {WEEK_DAYS.map((d) => <div key={d} className="py-1">{d}</div>)}
+                </div>
+
+                {/* Seasonal Calendar Grid */}
+                <div className="grid grid-cols-7 gap-1">
+                  {Array.from({ length: (new Date(seasonalYear, seasonalMonth, 1).getDay() + 6) % 7 }).map((_, i) => (
+                    <div key={`seasonal-empty-${i}`} className="h-20 sm:h-28 bg-slate-50/40 rounded-xl border border-transparent"></div>
+                  ))}
+
+                  {(() => {
+                    const days = [];
+                    const date = new Date(seasonalYear, seasonalMonth, 1);
+                    while (date.getMonth() === seasonalMonth) {
+                      days.push(new Date(date));
+                      date.setDate(date.getDate() + 1);
+                    }
+
+                    // Filter visible entries: Supervisors see everyone (or filtered colleague); Colleagues see their own
+                    const visibleEntries = seasonalList.filter((entry) => {
+                      if (!isSupervisor) return entry.userId === currentUser.id;
+                      if (seasonalFilterUserId !== 'all') return entry.userId === seasonalFilterUserId;
+                      return true;
+                    });
+
+                    const availByDate = {};
+                    visibleEntries.forEach((entry) => {
+                      if (!availByDate[entry.date]) availByDate[entry.date] = [];
+                      availByDate[entry.date].push(entry);
+                    });
+
+                    return days.map((dateObj) => {
+                      const y = dateObj.getFullYear();
+                      const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+                      const d = String(dateObj.getDate()).padStart(2, '0');
+                      const dateStr = `${y}-${m}-${d}`;
+                      const dayEntries = availByDate[dateStr] || [];
+                      const isSelected = selectedSeasonalDate === dateStr;
+
+                      return (
+                        <div
+                          key={dateStr}
+                          onClick={() => setSelectedSeasonalDate(dateStr)}
+                          className={`h-20 sm:h-28 p-1 sm:p-1.5 rounded-xl border flex flex-col justify-between cursor-pointer transition-all overflow-hidden ${
+                            isSelected
+                              ? 'bg-indigo-50/80 border-indigo-600 ring-2 ring-indigo-500/20'
+                              : 'bg-white hover:bg-slate-50 border-slate-200'
+                          }`}>
+                          <div className="flex items-center justify-between">
+                            <span className={`text-[11px] sm:text-xs font-bold ${isSelected ? 'text-indigo-700' : 'text-slate-800'}`}>
+                              {dateObj.getDate()}
+                            </span>
+                            {dayEntries.length > 0 && (
+                              <span className="text-[9px] px-1 rounded bg-slate-100 text-slate-600 font-bold">
+                                {dayEntries.length}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="space-y-0.5 overflow-y-auto max-h-14 sm:max-h-20">
+                            {dayEntries.map((ent) => {
+                              const isAvail = ent.status !== 'unavailable';
+                              const shortName = (ent.userName || '').split(' ')[0];
+                              return (
+                                <div
+                                  key={ent.id}
+                                  className={`px-1 py-0.5 rounded text-[8px] sm:text-[9px] font-bold truncate ${
+                                    isAvail
+                                      ? 'bg-emerald-100 text-emerald-900 border border-emerald-200'
+                                      : 'bg-rose-100 text-rose-800 border border-rose-200'
+                                  }`}>
+                                  {isSupervisor ? `${shortName}: ` : ''}
+                                  {isAvail ? `${ent.minStart}-${ent.maxFinish}` : 'Unavail'}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+
+                {/* Selected Date Detailed Breakdown Card */}
+                {selectedSeasonalDate && (
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-slate-900 text-xs sm:text-sm">
+                        Availability Breakdown for {selectedSeasonalDate}
+                      </h4>
+                      <span className="text-[11px] text-slate-500 font-semibold">
+                        {isSupervisor ? 'Visible to Manager & Team Leaders' : 'Your Declared Window'}
+                      </span>
+                    </div>
+
+                    {(() => {
+                      const dayList = seasonalList.filter((entry) => {
+                        if (entry.date !== selectedSeasonalDate) return false;
+                        if (!isSupervisor) return entry.userId === currentUser.id;
+                        if (seasonalFilterUserId !== 'all') return entry.userId === seasonalFilterUserId;
+                        return true;
+                      });
+
+                      if (dayList.length === 0) {
+                        return (
+                          <p className="text-xs text-slate-400 italic py-2">
+                            No availability declared for this date yet. Use the form on the left to add yours.
+                          </p>
+                        );
+                      }
+
+                      return (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {dayList.map((ent) => {
+                            const isAvail = ent.status !== 'unavailable';
+                            return (
+                              <div
+                                key={ent.id}
+                                className="p-3 rounded-xl bg-white border border-slate-200 flex items-center justify-between gap-2 text-xs">
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center space-x-2">
+                                    <span className="font-bold text-slate-900">{ent.userName}</span>
+                                    <span
+                                      className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                        isAvail ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                                      }`}>
+                                      {isAvail ? `${ent.minStart} – ${ent.maxFinish}` : 'Unavailable'}
+                                    </span>
+                                  </div>
+                                  {ent.note && <p className="text-[11px] text-slate-500">Note: "{ent.note}"</p>}
+                                </div>
+                                {(ent.userId === currentUser.id || isManager) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleClearSeasonalAvailability(ent.userId, ent.date)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg">
+                                    <Trash2 className="w-4 h-4"/>
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             </div>
           </div>
