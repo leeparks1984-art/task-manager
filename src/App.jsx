@@ -79,7 +79,7 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December"
 ];
 
-// Standard Repetitive Task Presets & Expectations (Now includes Warehouse & Finalising Deliveries)
+// Standard Repetitive Task Presets & Expectations
 const TASK_PRESETS = [
   { id: 'custom', label: 'Custom (Type Your Own)', title: '', description: '' },
   {
@@ -175,7 +175,6 @@ const buildQrCodeUrl = (value) => {
   return `https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=16&data=${encodeURIComponent(value)}`;
 };
 
-// Normalize legacy single photo + new multi-photo array so every task renders cleanly
 const getTaskCompletionPhotos = (task) => {
   if (!task) return [];
   if (Array.isArray(task.completionPhotos) && task.completionPhotos.length > 0) return task.completionPhotos;
@@ -191,7 +190,7 @@ const getTaskManagerPhotos = (task) => {
 };
 
 const getTodayDayCode = () => {
-  const dayIdx = new Date().getDay(); // 0 = Sun, 1 = Mon...
+  const dayIdx = new Date().getDay();
   const map = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   return map[dayIdx];
 };
@@ -202,6 +201,45 @@ const getTodayIsoDate = () => {
   const m = String(now.getMonth() + 1).padStart(2, '0');
   const d = String(now.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+};
+
+// Calculate deadline urgency badge for Complete By dates
+const getDueDateBadgeInfo = (dueDateStr) => {
+  if (!dueDateStr) return null;
+  const todayStr = getTodayIsoDate();
+  const todayDate = new Date(todayStr + 'T00:00:00');
+  const dueDate = new Date(dueDateStr + 'T00:00:00');
+  if (isNaN(dueDate.getTime())) return null;
+
+  const diffDays = Math.round((dueDate - todayDate) / (1000 * 60 * 60 * 24));
+  const formatted = dueDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
+  if (diffDays < 0) {
+    return {
+      label: `OVERDUE (Due ${formatted})`,
+      className: 'bg-rose-600 text-white',
+      isOverdue: true
+    };
+  }
+  if (diffDays === 0) {
+    return {
+      label: `DUE TODAY (${formatted})`,
+      className: 'bg-rose-500 text-white',
+      isOverdue: false
+    };
+  }
+  if (diffDays <= 2) {
+    return {
+      label: `Due in ${diffDays}d (${formatted})`,
+      className: 'bg-amber-500 text-white',
+      isOverdue: false
+    };
+  }
+  return {
+    label: `Complete by ${formatted}`,
+    className: 'bg-indigo-100 text-indigo-800 border border-indigo-200',
+    isOverdue: false
+  };
 };
 
 let sharedAudioCtx = null;
@@ -267,7 +305,6 @@ const triggerSystemNotification = async (title, body, uniqueTag = 'taskflow-aler
   }
 };
 
-//Slightly tighter compression (720px, 0.65 quality) so multiple photos fit inside Firestore documents effortlessly
 const compressImage = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -296,6 +333,23 @@ const sortTasksByPriorityAndDate = (taskList) => {
     const aHandover = a.progressStatus === 'incomplete' ? 1 : 0;
     const bHandover = b.progressStatus === 'incomplete' ? 1 : 0;
     if (aHandover !== bHandover) return bHandover - aHandover;
+    const aUrgent = a.priority === 'urgent' ? 1 : 0;
+    const bUrgent = b.priority === 'urgent' ? 1 : 0;
+    if (aUrgent !== bUrgent) return bUrgent - aUrgent;
+    if (a.dueDate && b.dueDate && a.dueDate !== b.dueDate) {
+      return a.dueDate.localeCompare(b.dueDate);
+    }
+    return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+  });
+};
+
+const sortPoolTasksByDeadline = (poolList) => {
+  return [...poolList].sort((a, b) => {
+    if (a.dueDate && b.dueDate && a.dueDate !== b.dueDate) {
+      return a.dueDate.localeCompare(b.dueDate);
+    }
+    if (a.dueDate && !b.dueDate) return -1;
+    if (!a.dueDate && b.dueDate) return 1;
     const aUrgent = a.priority === 'urgent' ? 1 : 0;
     const bUrgent = b.priority === 'urgent' ? 1 : 0;
     if (aUrgent !== bUrgent) return bUrgent - aUrgent;
@@ -328,7 +382,6 @@ export default function App() {
   const [showPinModal, setShowPinModal] = useState(false);
   const [selfNewPin, setSelfNewPin] = useState('');
 
-  // Manage Team Edit States (Includes Contracted Days & Standing Shift Presets)
   const [editingUserId, setEditingUserId] = useState(null);
   const [editUserName, setEditUserName] = useState('');
   const [editUserRole, setEditUserRole] = useState('colleague');
@@ -358,8 +411,9 @@ export default function App() {
   const [reqNote, setReqNote] = useState('');
   const [managerReplyInputs, setManagerReplyInputs] = useState({});
 
-  // Collapsible Accordion States for Supervisor Board
+  // Collapsible Accordion States for Supervisor Board (Includes Open Task Pool)
   const [openSections, setOpenSections] = useState({
+    taskPool: true,
     reassigned: true,
     validation: true,
     inProgress: true,
@@ -376,11 +430,13 @@ export default function App() {
   const [requests, setRequests] = useState([]);
   const [notifications, setNotifications] = useState([]);
 
-  // Assign Task Form State (Now supports multiple manager reference photos)
+  // Assign Task Form State (Now includes Open Pool Mode & Complete By Date)
   const [selectedPreset, setSelectedPreset] = useState('custom');
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
   const [taskPriority, setTaskPriority] = useState('standard');
+  const [isPoolTaskMode, setIsPoolTaskMode] = useState(false);
+  const [taskDueDate, setTaskDueDate] = useState('');
   const [taskAssigneeIds, setTaskAssigneeIds] = useState([]);
   const [taskPhotos, setTaskPhotos] = useState([]);
 
@@ -395,7 +451,6 @@ export default function App() {
   const [handoverTask, setHandoverTask] = useState(null);
   const [handoverNote, setHandoverNote] = useState('');
 
-  // Complete Task Modal State (Now supports multiple completion proof photos)
   const [completingTask, setCompletingTask] = useState(null);
   const [completionNote, setCompletionNote] = useState('');
   const [completionPhotos, setCompletionPhotos] = useState([]);
@@ -404,7 +459,6 @@ export default function App() {
   const [lightboxImage, setLightboxImage] = useState(null);
   const [lightboxTitle, setLightboxTitle] = useState('');
 
-  // Add New Team Member State (Includes Contracted Days & Standing Shift Presets)
   const [newUserName, setNewUserName] = useState('');
   const [newUserRole, setNewUserRole] = useState('colleague');
   const [newUserPin, setNewUserPin] = useState('1234');
@@ -489,7 +543,6 @@ export default function App() {
     }
   };
 
-  // Foreground FCM Listener
   useEffect(() => {
     let unsubFCM = null;
     const setupForegroundMessaging = async () => {
@@ -567,7 +620,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Load Blackout Dates & Auto-Drop Config from Firestore
   useEffect(() => {
     if (!fbUser) return;
     const blackoutRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'blackouts');
@@ -671,7 +723,6 @@ export default function App() {
     }
   }, [teamUsers]);
 
-  // Helper to expand date ranges for holiday requests
   const getDatesInRange = (startDateStr, endDateStr) => {
     if (!startDateStr) return [];
     const start = new Date(startDateStr);
@@ -689,7 +740,6 @@ export default function App() {
     return arr;
   };
 
-  // Check if a colleague has an Approved Holiday on a given YYYY-MM-DD date
   const isUserOnApprovedHoliday = (userId, isoDateStr) => {
     return requests.some((req) => {
       if (req.requesterId !== userId) return false;
@@ -699,7 +749,6 @@ export default function App() {
     });
   };
 
-  // Determine which colleagues are contracted & working today (and not on approved holiday)
   const todayDayCode = getTodayDayCode();
   const todayIsoDate = getTodayIsoDate();
 
@@ -814,7 +863,6 @@ export default function App() {
           const presetObj = TASK_PRESETS.find((p) => p.id === presetId);
           if (!presetObj || !presetObj.title) continue;
 
-          // Prevent duplicates if that colleague already has this task dropped today
           const alreadyExistsToday = tasks.some(
             (t) =>
               t.assigneeId === u.id &&
@@ -827,6 +875,7 @@ export default function App() {
               title: presetObj.title,
               description: presetObj.description,
               priority: 'standard',
+              dueDate: todayIso,
               progressStatus: 'not_started',
               startedAt: null,
               pausedAt: null,
@@ -842,6 +891,7 @@ export default function App() {
               createdById: 'system-auto',
               createdByName: 'Daily Shift Auto-Drop',
               autoAssignedDate: todayIso,
+              claimedFromPoolBy: null,
               delegatedByName: null,
               managerPhoto: null,
               managerPhotos: [],
@@ -884,7 +934,6 @@ export default function App() {
     }
   };
 
-  // Automatically trigger daily standing tasks once per calendar day when app is opened
   useEffect(() => {
     if (!fbUser || !currentUser || teamUsers.length === 0 || lastAutoDropDate === null) return;
     const todayIso = getTodayIsoDate();
@@ -956,7 +1005,6 @@ export default function App() {
     showToast("Profile Updated", `Saved shift days & routine tasks for ${editUserName.trim()}.`);
   };
 
-  // Multi-Photo Upload Handler (Supports selecting multiple photos or snapping several one by one)
   const handleMultiPhotoUpload = async (e, currentPhotos, setter) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -1003,21 +1051,86 @@ export default function App() {
 
   const handleCreateTask = async (e) => {
     e.preventDefault();
-    if (!taskTitle.trim() || taskAssigneeIds.length === 0) {
-      showToast("Select Assignee", "Please tick at least one person.");
+    if (!taskTitle.trim()) {
+      showToast("Missing Title", "Please enter a task title.");
+      return;
+    }
+
+    const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
+    const isUrgent = taskPriority === 'urgent';
+
+    // Mode 1: Drop into Supervisor Open Task Pool (Team Leaders Claim)
+    if (isPoolTaskMode) {
+      if (!taskDueDate) {
+        showToast("Complete By Date Required", "Please pick a 'Complete By' date for the Open Pool task.");
+        return;
+      }
+
+      await addDoc(tasksRef, {
+        title: taskTitle.trim(),
+        description: taskDesc.trim(),
+        priority: taskPriority,
+        dueDate: taskDueDate,
+        progressStatus: 'not_started',
+        startedAt: null,
+        pausedAt: null,
+        pauseReason: '',
+        pauseHistory: [],
+        handoverFromId: null,
+        handoverFromName: null,
+        handoverNote: '',
+        handoverHistory: [],
+        assigneeId: 'pool',
+        assigneeName: 'Open Task Pool (Unclaimed)',
+        assigneeRole: 'team_leader',
+        createdById: currentUser.id,
+        createdByName: currentUser.name,
+        claimedFromPoolBy: null,
+        claimedAt: null,
+        delegatedByName: null,
+        managerPhoto: taskPhotos[0] || null,
+        managerPhotos: taskPhotos,
+        completionPhoto: null,
+        completionPhotos: [],
+        completionNote: '',
+        comments: [],
+        status: 'open_pool',
+        createdAt: new Date().toISOString(),
+        completedAt: null,
+        validatedAt: null
+      });
+
+      await sendNotification(
+        null,
+        'supervisors',
+        'New Job in Open Task Pool',
+        `${currentUser.name} added "${taskTitle.trim()}" (Complete by ${taskDueDate}) to the Team Leader Task Pool.`
+      );
+
+      setSelectedPreset('custom');
+      setTaskTitle('');
+      setTaskDesc('');
+      setTaskPriority('standard');
+      setTaskDueDate('');
+      setTaskPhotos([]);
+      showToast("Added to Task Pool", `"${taskTitle.trim()}" is now ready for Team Leaders to claim.`);
+      return;
+    }
+
+    // Mode 2: Assign directly to selected staff
+    if (taskAssigneeIds.length === 0) {
+      showToast("Select Assignee", "Please tick at least one person or switch to Open Task Pool.");
       return;
     }
     const selectedUsers = teamUsers.filter((u) => taskAssigneeIds.includes(u.id));
     if (selectedUsers.length === 0) return;
-
-    const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
-    const isUrgent = taskPriority === 'urgent';
 
     for (const assigneeObj of selectedUsers) {
       await addDoc(tasksRef, {
         title: taskTitle.trim(),
         description: taskDesc.trim(),
         priority: taskPriority,
+        dueDate: taskDueDate || null,
         progressStatus: 'not_started',
         startedAt: null,
         pausedAt: null,
@@ -1032,6 +1145,8 @@ export default function App() {
         assigneeRole: assigneeObj.role,
         createdById: currentUser.id,
         createdByName: currentUser.name,
+        claimedFromPoolBy: null,
+        claimedAt: null,
         delegatedByName: null,
         managerPhoto: taskPhotos[0] || null,
         managerPhotos: taskPhotos,
@@ -1049,7 +1164,7 @@ export default function App() {
         assigneeObj.id,
         null,
         isUrgent ? 'PRIORITY Task Assigned' : 'New Task Assigned',
-        `${currentUser.name} assigned ${isUrgent ? '[PRIORITY] ' : ''}"${taskTitle.trim()}" to you.`
+        `${currentUser.name} assigned ${isUrgent ? '[PRIORITY] ' : ''}"${taskTitle.trim()}"${taskDueDate ? ` (Complete by ${taskDueDate})` : ''} to you.`
       );
     }
 
@@ -1057,9 +1172,49 @@ export default function App() {
     setTaskTitle('');
     setTaskDesc('');
     setTaskPriority('standard');
+    setTaskDueDate('');
     setTaskAssigneeIds([]);
     setTaskPhotos([]);
     showToast("Task Assigned", `Assigned to ${selectedUsers.map((u) => u.name).join(', ')}`);
+  };
+
+  // Team Leader (or Manager) claims a task from the Open Pool for themselves or assigns it to a colleague
+  const handleClaimPoolTask = async (poolTask, targetUserId) => {
+    const targetUser = teamUsers.find((u) => u.id === (targetUserId || currentUser.id));
+    if (!targetUser) return;
+
+    const nowIso = new Date().toISOString();
+    const claimedForSelf = targetUser.id === currentUser.id;
+
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tasks', poolTask.id), {
+      status: 'active',
+      assigneeId: targetUser.id,
+      assigneeName: targetUser.name,
+      assigneeRole: targetUser.role,
+      progressStatus: 'not_started',
+      claimedFromPoolBy: currentUser.name,
+      claimedAt: nowIso,
+      delegatedByName: claimedForSelf ? null : currentUser.name,
+      delegatedAt: claimedForSelf ? null : nowIso
+    });
+
+    if (claimedForSelf) {
+      await sendNotification(
+        null,
+        'supervisors',
+        'Pool Task Claimed',
+        `${currentUser.name} claimed "${poolTask.title}" from the Open Task Pool.`
+      );
+      showToast("Task Claimed", `"${poolTask.title}" is now on your active task list.`);
+    } else {
+      await sendNotification(
+        targetUser.id,
+        null,
+        'Task Assigned from Pool',
+        `${currentUser.name} claimed "${poolTask.title}" from the pool and assigned it to you.`
+      );
+      showToast("Claimed & Assigned", `Assigned "${poolTask.title}" to ${targetUser.name}.`);
+    }
   };
 
   const handleStartOrResumeTask = async (task) => {
@@ -1193,6 +1348,7 @@ export default function App() {
     if (targetColleagues.length === 1) {
       const target = targetColleagues[0];
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tasks', delegatingTask.id), {
+        status: 'active',
         assigneeId: target.id,
         assigneeName: target.name,
         assigneeRole: target.role,
@@ -1217,6 +1373,7 @@ export default function App() {
           title: delegatingTask.title,
           description: updatedDescription,
           priority: delegatingTask.priority || 'standard',
+          dueDate: delegatingTask.dueDate || null,
           progressStatus: 'not_started',
           startedAt: null,
           pausedAt: null,
@@ -1231,6 +1388,7 @@ export default function App() {
           assigneeRole: target.role,
           createdById: delegatingTask.createdById || currentUser.id,
           createdByName: delegatingTask.createdByName || 'Manager',
+          claimedFromPoolBy: delegatingTask.claimedFromPoolBy || null,
           delegatedByName: currentUser.name,
           delegatedAt: nowIso,
           managerPhoto: existingMgrPhotos[0] || null,
@@ -1348,7 +1506,9 @@ export default function App() {
       validatedByName: currentUser.name,
       validatedAt: nowIso
     });
-    await sendNotification(task.assigneeId, null, 'Task Validated & Cleared', `${currentUser.name} validated "${task.title}".`);
+    if (task.assigneeId && task.assigneeId !== 'pool') {
+      await sendNotification(task.assigneeId, null, 'Task Validated & Cleared', `${currentUser.name} validated "${task.title}".`);
+    }
     showToast("Task Validated", `"${task.title}" archived.`);
   };
 
@@ -1371,10 +1531,10 @@ export default function App() {
     ];
     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tasks', task.id), { comments: updatedComments });
     setCommentInputs((prev) => ({ ...prev, [task.id]: '' }));
-    if (currentUser.id !== task.assigneeId) {
+    if (currentUser.id !== task.assigneeId && task.assigneeId !== 'pool') {
       await sendNotification(task.assigneeId, null, 'New Task Comment', `${currentUser.name} commented on "${task.title}".`);
     } else {
-      await sendNotification(null, 'supervisors', 'New Colleague Comment', `${currentUser.name} commented on "${task.title}".`);
+      await sendNotification(null, 'supervisors', 'New Task Comment', `${currentUser.name} commented on "${task.title}".`);
     }
   };
 
@@ -1643,6 +1803,9 @@ export default function App() {
   const myPendingTasks = tasks.filter((t) => t.assigneeId === currentUser.id && t.status === 'pending_validation');
   const myArchivedTasks = tasks.filter((t) => t.assigneeId === currentUser.id && t.status === 'archived');
 
+  // Unclaimed Open Task Pool (Visible to Manager & Team Leaders only)
+  const openPoolTasks = sortPoolTasksByDeadline(tasks.filter((t) => t.status === 'open_pool'));
+
   const allActiveTasks = sortTasksByPriorityAndDate(tasks.filter((t) => t.status === 'active'));
   const pausedOrHandoverTasks = allActiveTasks.filter(
     (t) => t.progressStatus === 'paused' || t.progressStatus === 'incomplete'
@@ -1709,7 +1872,7 @@ export default function App() {
   });
 
   const performanceReviewTasks = tasks.filter((t) => {
-    const isUncompletedActive = t.status === 'active';
+    const isUncompletedActive = t.status === 'active' || t.status === 'open_pool';
     const hasHandoverRecord = wasTaskHandedOver(t);
 
     if (!isUncompletedActive && !hasHandoverRecord) return false;
@@ -1756,8 +1919,11 @@ export default function App() {
 
     performanceReviewTasks.forEach((t, idx) => {
       const createdDate = t.createdAt ? new Date(t.createdAt).toLocaleDateString() : 'N/A';
+      const dueStr = t.dueDate ? ` [Complete By: ${t.dueDate}]` : '';
       const statusLabel =
-        t.status === 'archived'
+        t.status === 'open_pool'
+          ? `Unclaimed in Open Task Pool`
+          : t.status === 'archived'
           ? `Completed/Validated (Finished by ${t.assigneeName})`
           : t.status === 'pending_validation'
           ? `Awaiting Validation (Submitted by ${t.assigneeName})`
@@ -1781,7 +1947,7 @@ export default function App() {
           ? `Handed over from ${t.handoverFromName} (Note: "${t.handoverNote || 'None'}")`
           : 'No handover (Currently open)';
 
-      lines.push(`${idx + 1}. [${createdDate}] ${t.title} — ${statusLabel}`);
+      lines.push(`${idx + 1}. [${createdDate}] ${t.title}${dueStr} — ${statusLabel}`);
       lines.push(`   Handover Trail: ${handoverSummary}`);
     });
 
@@ -1799,6 +1965,7 @@ export default function App() {
     const isPaused = t.progressStatus === 'paused';
     const isIncomplete = t.progressStatus === 'incomplete';
     const mgrPhotos = getTaskManagerPhotos(t);
+    const dueBadge = getDueDateBadgeInfo(t.dueDate);
 
     return (
       <div
@@ -1822,6 +1989,11 @@ export default function App() {
                   <span>Priority</span>
                 </span>
               )}
+              {dueBadge && (
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${dueBadge.className}`}>
+                  {dueBadge.label}
+                </span>
+              )}
               {isInProgress && (
                 <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-[10px] font-bold">
                   Working On It {t.startedAt ? `(${new Date(t.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : ''}
@@ -1840,6 +2012,11 @@ export default function App() {
               {!isInProgress && !isPaused && !isIncomplete && (
                 <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-semibold">
                   Allocated (Not Started)
+                </span>
+              )}
+              {t.claimedFromPoolBy && (
+                <span className="px-2 py-0.5 bg-violet-100 text-violet-800 rounded text-[10px] font-semibold">
+                  Claimed by {t.claimedFromPoolBy}
                 </span>
               )}
               {t.handoverFromName && (
@@ -2274,7 +2451,7 @@ export default function App() {
             className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold shrink-0 ${
               activeTab === 'tasks' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
             }`}>
-            {isSupervisor ? 'Team Task Board & Validation' : 'My Assigned Tasks'}
+            {isSupervisor ? `Team Task Board (Pool: ${openPoolTasks.length})` : 'My Assigned Tasks'}
           </button>
 
           {currentUser.role === 'team_leader' && (
@@ -2283,7 +2460,7 @@ export default function App() {
               className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 shrink-0 ${
                 activeTab === 'my_tl_tasks' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
               }`}>
-              <span>Tasks From Manager ({myAssignedTasks.length})</span>
+              <span>My Claimed & Manager Tasks ({myAssignedTasks.length})</span>
             </button>
           )}
 
@@ -2322,29 +2499,55 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
-        {/* ================= SUPERVISOR DASHBOARD WITH 4 COLLAPSIBLE STATUS CARDS ================= */}
+        {/* ================= SUPERVISOR DASHBOARD WITH OPEN POOL & COLLAPSIBLE CARDS ================= */}
         {activeTab === 'tasks' && isSupervisor && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Left Column: Assign New Task Form */}
+            {/* Left Column: Assign New Task or Drop into Pool Form */}
             <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-5 shadow-xs">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center space-x-2.5">
                   <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
                     <Plus className="w-4 h-4"/>
                   </div>
-                  <h2 className="font-bold text-slate-800 text-base">Assign New Task</h2>
+                  <h2 className="font-bold text-slate-800 text-base">Create / Drop Task</h2>
                 </div>
                 <button
                   type="button"
                   onClick={() => handleRunDailyStandingTasks(true)}
-                  className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px] flex items-center space-x-1"
-                  title="Drop contracted standing tasks for colleagues working today">
+                  className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px] flex items-center space-x-1">
                   <Sparkles className="w-3.5 h-3.5"/>
                   <span>Drop {todayDayCode} Routine</span>
                 </button>
               </div>
 
               <form onSubmit={handleCreateTask} className="space-y-4">
+                {/* Assignment Mode Toggle: Specific Staff vs. Open Task Pool */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 uppercase">Assignment Destination</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsPoolTaskMode(false)}
+                      className={`py-2 px-3 rounded-xl text-xs font-semibold border transition-all ${
+                        !isPoolTaskMode
+                          ? 'bg-indigo-600 text-white border-indigo-600'
+                          : 'bg-slate-50 text-slate-600 border-slate-200'
+                      }`}>
+                      Assign to Staff
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsPoolTaskMode(true)}
+                      className={`py-2 px-3 rounded-xl text-xs font-semibold border transition-all ${
+                        isPoolTaskMode
+                          ? 'bg-violet-600 text-white border-violet-600'
+                          : 'bg-violet-50 text-violet-700 border-violet-200'
+                      }`}>
+                      Open Task Pool (TLs Claim)
+                    </button>
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <label className="block text-xs font-semibold text-slate-600 uppercase">Quick Task Preset</label>
                   <select
@@ -2370,27 +2573,41 @@ export default function App() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1.5">Priority Level</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setTaskPriority('standard')}
-                      className={`py-2 px-3 rounded-xl text-xs font-semibold border flex items-center justify-center space-x-1.5 ${
-                        taskPriority === 'standard' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-600 border-slate-200'
-                      }`}>
-                      <Clock className="w-3.5 h-3.5"/>
-                      <span>Standard</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTaskPriority('urgent')}
-                      className={`py-2 px-3 rounded-xl text-xs font-semibold border flex items-center justify-center space-x-1.5 ${
-                        taskPriority === 'urgent' ? 'bg-rose-600 text-white border-rose-600' : 'bg-rose-50 text-rose-700 border-rose-200'
-                      }`}>
-                      <Flame className="w-3.5 h-3.5"/>
-                      <span>Priority / First Job</span>
-                    </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Priority Level</label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setTaskPriority('standard')}
+                        className={`py-2 px-2 rounded-xl text-xs font-semibold border flex items-center justify-center space-x-1 ${
+                          taskPriority === 'standard' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-600 border-slate-200'
+                        }`}>
+                        <span>Standard</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTaskPriority('urgent')}
+                        className={`py-2 px-2 rounded-xl text-xs font-semibold border flex items-center justify-center space-x-1 ${
+                          taskPriority === 'urgent' ? 'bg-rose-600 text-white border-rose-600' : 'bg-rose-50 text-rose-700 border-rose-200'
+                        }`}>
+                        <Flame className="w-3 h-3"/>
+                        <span>Priority</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                      Complete By {isPoolTaskMode ? '(Required)' : '(Optional)'}
+                    </label>
+                    <input
+                      type="date"
+                      required={isPoolTaskMode}
+                      value={taskDueDate}
+                      onChange={(e) => setTaskDueDate(e.target.value)}
+                      className="w-full px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold bg-slate-50"
+                    />
                   </div>
                 </div>
 
@@ -2401,7 +2618,7 @@ export default function App() {
                     required
                     value={taskTitle}
                     onChange={(e) => setTaskTitle(e.target.value)}
-                    placeholder="e.g. Drop Tops - Aisles 4 to 6"
+                    placeholder="e.g. Relay Aisle 7 Modular / End-of-Month Deep Clean"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
                   />
                 </div>
@@ -2418,69 +2635,78 @@ export default function App() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-semibold text-slate-600 uppercase">
-                      Assign To ({taskAssigneeIds.length} Selected)
-                    </label>
-                    <button type="button" onClick={() => setTaskAssigneeIds([])} className="text-[11px] font-semibold text-slate-400">
-                      Clear
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setTaskAssigneeIds(onShiftTodayUsers.map((u) => u.id))}
-                      className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[11px] font-bold">
-                      On Shift Today ({onShiftTodayUsers.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTaskAssigneeIds(colleaguesOnly.map((c) => c.id))}
-                      className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-semibold">
-                      All Colleagues ({colleaguesOnly.length})
-                    </button>
-                    {isManager && (
+                {!isPoolTaskMode ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold text-slate-600 uppercase">
+                        Assign To ({taskAssigneeIds.length} Selected)
+                      </label>
+                      <button type="button" onClick={() => setTaskAssigneeIds([])} className="text-[11px] font-semibold text-slate-400">
+                        Clear
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
                       <button
                         type="button"
-                        onClick={() => setTaskAssigneeIds(teamLeadersOnly.map((tl) => tl.id))}
-                        className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-semibold">
-                        All Team Leaders ({teamLeadersOnly.length})
+                        onClick={() => setTaskAssigneeIds(onShiftTodayUsers.map((u) => u.id))}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[11px] font-bold">
+                        On Shift Today ({onShiftTodayUsers.length})
                       </button>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => setTaskAssigneeIds(colleaguesOnly.map((c) => c.id))}
+                        className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-semibold">
+                        All Colleagues ({colleaguesOnly.length})
+                      </button>
+                      {isManager && (
+                        <button
+                          type="button"
+                          onClick={() => setTaskAssigneeIds(teamLeadersOnly.map((tl) => tl.id))}
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-semibold">
+                          All Team Leaders ({teamLeadersOnly.length})
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1 bg-slate-50/50">
+                      {assignableUsers.map((m) => {
+                        const onShift = isUserOnShiftToday(m);
+                        const onHoliday = isUserOnApprovedHoliday(m.id, todayIsoDate);
+                        return (
+                          <label
+                            key={m.id}
+                            className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs ${
+                              taskAssigneeIds.includes(m.id) ? 'bg-indigo-50 font-semibold text-indigo-900' : 'text-slate-700'
+                            }`}>
+                            <div className="flex items-center space-x-2.5">
+                              <input
+                                type="checkbox"
+                                checked={taskAssigneeIds.includes(m.id)}
+                                onChange={() => toggleTaskAssignee(m.id)}
+                              />
+                              <span>{m.name}</span>
+                            </div>
+                            <div className="flex items-center space-x-1">
+                              {onHoliday && (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">Holiday</span>
+                              )}
+                              {onShift && (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">On Shift</span>
+                              )}
+                              <span className="text-[10px] text-slate-400 capitalize">{(m.role || '').replace('_', ' ')}</span>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1 bg-slate-50/50">
-                    {assignableUsers.map((m) => {
-                      const onShift = isUserOnShiftToday(m);
-                      const onHoliday = isUserOnApprovedHoliday(m.id, todayIsoDate);
-                      return (
-                        <label
-                          key={m.id}
-                          className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs ${
-                            taskAssigneeIds.includes(m.id) ? 'bg-indigo-50 font-semibold text-indigo-900' : 'text-slate-700'
-                          }`}>
-                          <div className="flex items-center space-x-2.5">
-                            <input
-                              type="checkbox"
-                              checked={taskAssigneeIds.includes(m.id)}
-                              onChange={() => toggleTaskAssignee(m.id)}
-                            />
-                            <span>{m.name}</span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            {onHoliday && (
-                              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">Holiday</span>
-                            )}
-                            {onShift && (
-                              <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">On Shift</span>
-                            )}
-                            <span className="text-[10px] text-slate-400 capitalize">{(m.role || '').replace('_', ' ')}</span>
-                          </div>
-                        </label>
-                      );
-                    })}
+                ) : (
+                  <div className="p-3 rounded-xl bg-violet-50 border border-violet-200 text-xs text-violet-900 space-y-1">
+                    <p className="font-bold">Open Task Pool Mode Active</p>
+                    <p className="text-[11px] text-violet-700">
+                      This job will sit in the Team Leader Open Pool sorted by its Complete By date until a Team Leader claims it for themselves or delegates it to a colleague.
+                    </p>
                   </div>
-                </div>
+                )}
 
                 {/* Multiple Reference Photos Section */}
                 <div className="space-y-2">
@@ -2546,16 +2772,140 @@ export default function App() {
                 <button
                   type="submit"
                   className={`w-full py-3 px-4 text-white font-semibold rounded-xl text-sm shadow-md flex items-center justify-center space-x-2 ${
-                    taskPriority === 'urgent' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                    isPoolTaskMode
+                      ? 'bg-violet-600 hover:bg-violet-700'
+                      : taskPriority === 'urgent'
+                      ? 'bg-rose-600 hover:bg-rose-700'
+                      : 'bg-indigo-600 hover:bg-indigo-700'
                   }`}>
                   <Plus className="w-4 h-4"/>
-                  <span>Drop Task onto List</span>
+                  <span>{isPoolTaskMode ? 'Drop into Open Task Pool' : 'Drop Task onto List'}</span>
                 </button>
               </form>
             </div>
 
-            {/* Right 2 Columns: 4 Collapsible Accordion Cards */}
+            {/* Right 2 Columns: Collapsible Accordion Cards (Starts with Open Task Pool) */}
             <div className="lg:col-span-2 space-y-4">
+              {/* 0. COLLAPSIBLE CARD: WEEKLY / MONTHLY OPEN TASK POOL (SUPERVISORS ONLY) */}
+              <div className="bg-white rounded-2xl border-2 border-violet-300 overflow-hidden shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => toggleSection('taskPool')}
+                  className="w-full p-4 bg-violet-50/90 hover:bg-violet-100/70 flex items-center justify-between text-left transition-all">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 rounded-xl bg-violet-600 text-white flex items-center justify-center">
+                      <Layers className="w-5 h-5"/>
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-sm">Weekly / Monthly Open Task Pool — Unclaimed</h3>
+                      <p className="text-[11px] text-violet-800">
+                        Visible to Manager & Team Leaders only • Claim for yourself or assign to a colleague by the deadline
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="px-2.5 py-1 rounded-full bg-violet-200 text-violet-900 font-bold text-xs">
+                      {openPoolTasks.length}
+                    </span>
+                    {openSections.taskPool ? <ChevronUp className="w-5 h-5 text-violet-800"/> : <ChevronDown className="w-5 h-5 text-violet-800"/>}
+                  </div>
+                </button>
+                {openSections.taskPool && (
+                  <div className="p-4 space-y-3 bg-white">
+                    {openPoolTasks.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic text-center py-4">
+                        No unclaimed jobs in the Open Task Pool right now.
+                      </p>
+                    ) : (
+                      openPoolTasks.map((pt) => {
+                        const dueBadge = getDueDateBadgeInfo(pt.dueDate);
+                        const mgrPhotos = getTaskManagerPhotos(pt);
+                        return (
+                          <div
+                            key={pt.id}
+                            className={`p-4 rounded-xl border text-xs space-y-3 shadow-xs ${
+                              dueBadge?.isOverdue
+                                ? 'border-rose-400 bg-rose-50/20'
+                                : 'border-violet-200 bg-violet-50/20'
+                            }`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="space-y-1">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="px-2 py-0.5 bg-violet-600 text-white rounded text-[10px] font-bold uppercase">
+                                    Open Pool
+                                  </span>
+                                  {pt.priority === 'urgent' && (
+                                    <span className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-bold uppercase flex items-center space-x-1">
+                                      <Flame className="w-2.5 h-2.5"/>
+                                      <span>Priority</span>
+                                    </span>
+                                  )}
+                                  {dueBadge && (
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${dueBadge.className}`}>
+                                      {dueBadge.label}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-slate-400">
+                                    Added by {pt.createdByName || 'Manager'}
+                                  </span>
+                                </div>
+                                <h4 className="font-bold text-slate-900 text-sm pt-0.5">{pt.title}</h4>
+                                <p className="text-slate-600 text-xs whitespace-pre-line">{pt.description}</p>
+                                {mgrPhotos.length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5 pt-1">
+                                    {mgrPhotos.map((imgUrl, idx) => (
+                                      <img
+                                        key={idx}
+                                        src={imgUrl}
+                                        alt={`Pool Ref ${idx + 1}`}
+                                        onClick={() => { setLightboxTitle(`Pool Task Photo ${idx + 1}`); setLightboxImage(imgUrl); }}
+                                        className="h-14 w-20 object-cover rounded-lg border border-slate-300 cursor-pointer"
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => handleDeleteTask(pt)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50">
+                                <Trash2 className="w-4 h-4"/>
+                              </button>
+                            </div>
+
+                            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-violet-200/60">
+                              <button
+                                type="button"
+                                onClick={() => handleClaimPoolTask(pt, currentUser.id)}
+                                className="px-3.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl text-xs flex items-center space-x-1.5 shadow-xs">
+                                <Check className="w-3.5 h-3.5"/>
+                                <span>Claim for Myself ({currentUser.name})</span>
+                              </button>
+
+                              <div className="flex items-center space-x-1.5">
+                                <span className="text-[11px] font-semibold text-slate-600">Or Claim & Assign:</span>
+                                <select
+                                  defaultValue=""
+                                  onChange={(e) => {
+                                    if (e.target.value) handleClaimPoolTask(pt, e.target.value);
+                                  }}
+                                  className="text-xs bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-slate-800 font-semibold">
+                                  <option value="" disabled>Pick Colleague...</option>
+                                  {assignableUsers.map((u) => (
+                                    <option key={u.id} value={u.id}>
+                                      {u.name} {isUserOnShiftToday(u) ? '(On Shift)' : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* 1. COLLAPSIBLE CARD: WAITING TO BE REASSIGNED / PAUSED */}
               <div className="bg-white rounded-2xl border-2 border-orange-200 overflow-hidden shadow-xs">
                 <button
@@ -2626,6 +2976,11 @@ export default function App() {
                                   <span className="px-2 py-0.5 bg-indigo-600 text-white rounded text-[11px] font-bold">
                                     Completed by {t.assigneeName}
                                   </span>
+                                  {t.claimedFromPoolBy && (
+                                    <span className="px-2 py-0.5 bg-violet-100 text-violet-800 rounded text-[10px] font-semibold">
+                                      Claimed by {t.claimedFromPoolBy}
+                                    </span>
+                                  )}
                                   {t.handoverFromName && (
                                     <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded text-[11px] font-semibold">
                                       Started by {t.handoverFromName}
@@ -2784,6 +3139,7 @@ export default function App() {
                                 <p className="font-bold text-slate-800">{t.title}</p>
                                 <p className="text-slate-500">
                                   Completed by {t.assigneeName}
+                                  {t.claimedFromPoolBy ? ` (Pool Claim: ${t.claimedFromPoolBy})` : ''}
                                   {t.handoverFromName ? ` (Started by ${t.handoverFromName})` : ''}
                                 </p>
                               </div>
@@ -2828,7 +3184,7 @@ export default function App() {
                   <div>
                     <h2 className="font-bold text-slate-900 text-base">Manager Performance & Handover Review</h2>
                     <p className="text-xs text-slate-500">
-                      Tracks uncompleted jobs and shift handovers. Routine pauses (breaks/checkouts) that the colleague resumes and finishes themselves count as Completed First-Time.
+                      Tracks uncompleted jobs, Open Pool deadlines, and shift handovers. Routine pauses that the colleague resumes and finishes themselves count as Completed First-Time.
                     </p>
                   </div>
                 </div>
@@ -2962,6 +3318,7 @@ export default function App() {
                   performanceReviewTasks.map((t) => {
                     const hasHandover = wasTaskHandedOver(t);
                     const isCompletedNow = t.status === 'archived' || t.status === 'pending_validation';
+                    const dueBadge = getDueDateBadgeInfo(t.dueDate);
 
                     return (
                       <div
@@ -2979,7 +3336,16 @@ export default function App() {
                                   Handed Over
                                 </span>
                               )}
-                              {isCompletedNow ? (
+                              {dueBadge && (
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${dueBadge.className}`}>
+                                  {dueBadge.label}
+                                </span>
+                              )}
+                              {t.status === 'open_pool' ? (
+                                <span className="px-2 py-0.5 bg-violet-100 text-violet-800 rounded text-[10px] font-bold">
+                                  Unclaimed in Open Task Pool
+                                </span>
+                              ) : isCompletedNow ? (
                                 <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold">
                                   Eventually Completed by {t.assigneeName}
                                 </span>
@@ -2988,8 +3354,13 @@ export default function App() {
                                   Still Unfinished • Assigned to {t.assigneeName} ({(t.progressStatus || 'not_started').replace('_', ' ')})
                                 </span>
                               )}
+                              {t.claimedFromPoolBy && (
+                                <span className="px-2 py-0.5 bg-violet-50 text-violet-700 rounded text-[10px] font-semibold">
+                                  Pool Claimed by {t.claimedFromPoolBy}
+                                </span>
+                              )}
                               <span className="text-[11px] text-slate-400">
-                                Assigned {t.createdAt ? new Date(t.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : ''}
+                                Created {t.createdAt ? new Date(t.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : ''}
                               </span>
                             </div>
                             <h4 className="font-bold text-slate-900 text-sm">{t.title}</h4>
@@ -3055,7 +3426,7 @@ export default function App() {
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <div>
                     <h3 className="font-bold text-slate-900 text-base">
-                      {currentUser.role === 'team_leader' ? 'Tasks Assigned to Me by Manager' : 'My Active Tasks'}
+                      {currentUser.role === 'team_leader' ? 'My Claimed Pool Tasks & Manager Tasks' : 'My Active Tasks'}
                     </h3>
                     <p className="text-xs text-slate-500">
                       Tap Start Task when you begin, Pause if pulled away, or Handover if you cannot finish before your shift ends.
@@ -3080,6 +3451,7 @@ export default function App() {
                       const isPaused = t.progressStatus === 'paused';
                       const isIncomplete = t.progressStatus === 'incomplete';
                       const mgrPhotos = getTaskManagerPhotos(t);
+                      const dueBadge = getDueDateBadgeInfo(t.dueDate);
 
                       return (
                         <div
@@ -3095,6 +3467,11 @@ export default function App() {
                                     Priority / First Job
                                   </span>
                                 )}
+                                {dueBadge && (
+                                  <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${dueBadge.className}`}>
+                                    {dueBadge.label}
+                                  </span>
+                                )}
                                 {isInProgress && (
                                   <span className="px-2.5 py-0.5 bg-blue-100 text-blue-800 rounded-md text-[11px] font-bold">
                                     In Progress
@@ -3106,12 +3483,17 @@ export default function App() {
                                   </span>
                                 )}
                                 {!isInProgress && !isPaused && !isIncomplete && (
-                                  <span className="px-2.5 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[11px] font-semibold">
+                                  <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[11px] font-semibold">
                                     Not Started
                                   </span>
                                 )}
+                                {t.claimedFromPoolBy && (
+                                  <span className="px-2 py-0.5 bg-violet-100 text-violet-800 rounded-md text-[11px] font-semibold">
+                                    Claimed from Pool ({t.claimedFromPoolBy})
+                                  </span>
+                                )}
                                 {t.handoverFromName && (
-                                  <span className="px-2.5 py-0.5 bg-orange-100 text-orange-800 rounded-md text-[11px] font-semibold">
+                                  <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-md text-[11px] font-semibold">
                                     Handover from {t.handoverFromName}
                                   </span>
                                 )}
@@ -3228,7 +3610,6 @@ export default function App() {
         {/* ================= REQUESTS TAB & MOBILE HOLIDAY CALENDAR ================= */}
         {activeTab === 'requests' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Left Column: Request Form */}
             <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-4 shadow-xs">
               <h2 className="font-bold text-slate-900 text-base">Submit Holiday or Request</h2>
               <form onSubmit={handleCreateRequest} className="space-y-4">
@@ -3300,7 +3681,6 @@ export default function App() {
               </form>
             </div>
 
-            {/* Right 2 Columns: Mobile-Optimized Holiday Calendar & Requests List */}
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-xs space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
@@ -3347,12 +3727,10 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 7-Column Grid Header */}
                 <div className="grid grid-cols-7 gap-1 text-center font-bold text-[10px] sm:text-[11px] text-slate-400 uppercase">
                   {WEEK_DAYS.map((d) => <div key={d} className="py-1">{d}</div>)}
                 </div>
 
-                {/* Calendar Day Cells */}
                 <div className="grid grid-cols-7 gap-1">
                   {Array.from({ length: (new Date(calendarYear, calendarMonth, 1).getDay() + 6) % 7 }).map((_, i) => (
                     <div key={`empty-${i}`} className="h-16 sm:h-24 bg-slate-50/40 rounded-xl border border-transparent"></div>
@@ -3434,7 +3812,6 @@ export default function App() {
                   })()}
                 </div>
 
-                {/* Selected Day Details Drawer */}
                 {selectedCalendarDay && (
                   <div className="p-3.5 bg-indigo-50/70 rounded-xl border border-indigo-200 text-xs flex items-center justify-between">
                     <div>
@@ -3462,7 +3839,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* Requests Management List */}
               <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4 shadow-xs">
                 <h2 className="font-bold text-slate-900 text-base">{isSupervisor ? 'All Team Requests' : 'My Requests'}</h2>
                 <div className="space-y-3">
@@ -3526,7 +3902,6 @@ export default function App() {
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
                 />
 
-                {/* Quick-Select Contracted Days */}
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-slate-600 uppercase">Contracted Shift Days</label>
                   <div className="flex flex-wrap gap-1.5">
@@ -3547,7 +3922,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Standing Shift Routine Tasks */}
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-slate-600 uppercase">
                     Auto-Send Standing Tasks on Shift Days
