@@ -73,9 +73,27 @@ const db = getFirestore(app);
 const appId = "store-team-tasks-v1";
 const SESSION_STORAGE_KEY = "taskflow_saved_user_v1";
 
-// Standard Repetitive Task Presets & Expectations
+const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
+
+// Standard Repetitive Task Presets & Expectations (Now includes Warehouse & Finalising Deliveries)
 const TASK_PRESETS = [
   { id: 'custom', label: 'Custom (Type Your Own)', title: '', description: '' },
+  {
+    id: 'warehouse',
+    label: 'Warehouse',
+    title: 'Warehouse',
+    description: 'Maintain warehouse organisation, tip incoming deliveries safely, condense pallets and cages, keep walkways and fire exits clear, and upload photos of the cleared warehouse floor.'
+  },
+  {
+    id: 'finalising_deliveries',
+    label: 'Finalising Deliveries',
+    title: 'Finalising Deliveries',
+    description: 'Verify all incoming deliveries are finalised on the system, check off paperwork/ASN discrepancies, and upload a photo of the finalised delivery screen or paperwork.'
+  },
   {
     id: 'waste',
     label: 'Waste',
@@ -135,16 +153,16 @@ const PAUSE_REASONS = [
 ];
 
 const DEFAULT_USERS = [
-  { id: 'mgr-1', name: 'Lee (Manager)', role: 'manager', pin: '1234', color: 'bg-indigo-600', fcmTokens: [] },
-  { id: 'tl-1', name: 'Team Leader 1', role: 'team_leader', pin: '1234', color: 'bg-violet-600', fcmTokens: [] },
-  { id: 'tl-2', name: 'Team Leader 2', role: 'team_leader', pin: '1234', color: 'bg-purple-600', fcmTokens: [] },
-  { id: 'col-1', name: 'Colleague 1', role: 'colleague', pin: '1234', color: 'bg-blue-600', fcmTokens: [] },
-  { id: 'col-2', name: 'Colleague 2', role: 'colleague', pin: '1234', color: 'bg-emerald-600', fcmTokens: [] },
-  { id: 'col-3', name: 'Colleague 3', role: 'colleague', pin: '1234', color: 'bg-amber-600', fcmTokens: [] },
-  { id: 'col-4', name: 'Colleague 4', role: 'colleague', pin: '1234', color: 'bg-rose-600', fcmTokens: [] },
-  { id: 'col-5', name: 'Colleague 5', role: 'colleague', pin: '1234', color: 'bg-cyan-600', fcmTokens: [] },
-  { id: 'col-6', name: 'Colleague 6', role: 'colleague', pin: '1234', color: 'bg-teal-600', fcmTokens: [] },
-  { id: 'col-7', name: 'Colleague 7', role: 'colleague', pin: '1234', color: 'bg-orange-600', fcmTokens: [] }
+  { id: 'mgr-1', name: 'Lee (Manager)', role: 'manager', pin: '1234', color: 'bg-indigo-600', fcmTokens: [], contractedDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], defaultPresets: [] },
+  { id: 'tl-1', name: 'Team Leader 1', role: 'team_leader', pin: '1234', color: 'bg-violet-600', fcmTokens: [], contractedDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], defaultPresets: [] },
+  { id: 'tl-2', name: 'Team Leader 2', role: 'team_leader', pin: '1234', color: 'bg-purple-600', fcmTokens: [], contractedDays: ['Wed', 'Thu', 'Fri', 'Sat', 'Sun'], defaultPresets: [] },
+  { id: 'col-1', name: 'Colleague 1', role: 'colleague', pin: '1234', color: 'bg-blue-600', fcmTokens: [], contractedDays: [], defaultPresets: [] },
+  { id: 'col-2', name: 'Colleague 2', role: 'colleague', pin: '1234', color: 'bg-emerald-600', fcmTokens: [], contractedDays: [], defaultPresets: [] },
+  { id: 'col-3', name: 'Colleague 3', role: 'colleague', pin: '1234', color: 'bg-amber-600', fcmTokens: [], contractedDays: [], defaultPresets: [] },
+  { id: 'col-4', name: 'Colleague 4', role: 'colleague', pin: '1234', color: 'bg-rose-600', fcmTokens: [], contractedDays: [], defaultPresets: [] },
+  { id: 'col-5', name: 'Colleague 5', role: 'colleague', pin: '1234', color: 'bg-cyan-600', fcmTokens: [], contractedDays: [], defaultPresets: [] },
+  { id: 'col-6', name: 'Colleague 6', role: 'colleague', pin: '1234', color: 'bg-teal-600', fcmTokens: [], contractedDays: [], defaultPresets: [] },
+  { id: 'col-7', name: 'Colleague 7', role: 'colleague', pin: '1234', color: 'bg-orange-600', fcmTokens: [], contractedDays: [], defaultPresets: [] }
 ];
 
 const AVATAR_COLORS = [
@@ -155,6 +173,35 @@ const AVATAR_COLORS = [
 const buildQrCodeUrl = (value) => {
   if (!value) return '';
   return `https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=16&data=${encodeURIComponent(value)}`;
+};
+
+// Normalize legacy single photo + new multi-photo array so every task renders cleanly
+const getTaskCompletionPhotos = (task) => {
+  if (!task) return [];
+  if (Array.isArray(task.completionPhotos) && task.completionPhotos.length > 0) return task.completionPhotos;
+  if (task.completionPhoto) return [task.completionPhoto];
+  return [];
+};
+
+const getTaskManagerPhotos = (task) => {
+  if (!task) return [];
+  if (Array.isArray(task.managerPhotos) && task.managerPhotos.length > 0) return task.managerPhotos;
+  if (task.managerPhoto) return [task.managerPhoto];
+  return [];
+};
+
+const getTodayDayCode = () => {
+  const dayIdx = new Date().getDay(); // 0 = Sun, 1 = Mon...
+  const map = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return map[dayIdx];
+};
+
+const getTodayIsoDate = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 };
 
 let sharedAudioCtx = null;
@@ -220,6 +267,7 @@ const triggerSystemNotification = async (title, body, uniqueTag = 'taskflow-aler
   }
 };
 
+//Slightly tighter compression (720px, 0.65 quality) so multiple photos fit inside Firestore documents effortlessly
 const compressImage = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -229,13 +277,13 @@ const compressImage = (file) => {
       img.src = event.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800;
+        const MAX_WIDTH = 720;
         const scaleSize = img.width > MAX_WIDTH ? MAX_WIDTH / img.width : 1;
         canvas.width = img.width * scaleSize;
         canvas.height = img.height * scaleSize;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.7));
+        resolve(canvas.toDataURL('image/jpeg', 0.65));
       };
       img.onerror = (err) => reject(err);
     };
@@ -275,14 +323,18 @@ export default function App() {
   const [fcmEnabled, setFcmEnabled] = useState(false);
   const prevUnreadCountRef = useRef(null);
   const lastNotifiedIdRef = useRef(null);
+  const autoDropRunningRef = useRef(false);
 
   const [showPinModal, setShowPinModal] = useState(false);
   const [selfNewPin, setSelfNewPin] = useState('');
 
+  // Manage Team Edit States (Includes Contracted Days & Standing Shift Presets)
   const [editingUserId, setEditingUserId] = useState(null);
   const [editUserName, setEditUserName] = useState('');
   const [editUserRole, setEditUserRole] = useState('colleague');
   const [editUserPin, setEditUserPin] = useState('');
+  const [editUserDays, setEditUserDays] = useState([]);
+  const [editUserPresets, setEditUserPresets] = useState([]);
 
   const [activeTab, setActiveTab] = useState('tasks');
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
@@ -297,6 +349,7 @@ export default function App() {
   const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
   const [managerBlackoutMode, setManagerBlackoutMode] = useState(false);
   const [blackoutDates, setBlackoutDates] = useState({});
+  const [lastAutoDropDate, setLastAutoDropDate] = useState(null);
 
   // Request Form State
   const [reqType, setReqType] = useState('Time Off / Holiday');
@@ -323,12 +376,13 @@ export default function App() {
   const [requests, setRequests] = useState([]);
   const [notifications, setNotifications] = useState([]);
 
+  // Assign Task Form State (Now supports multiple manager reference photos)
   const [selectedPreset, setSelectedPreset] = useState('custom');
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
   const [taskPriority, setTaskPriority] = useState('standard');
   const [taskAssigneeIds, setTaskAssigneeIds] = useState([]);
-  const [taskPhoto, setTaskPhoto] = useState(null);
+  const [taskPhotos, setTaskPhotos] = useState([]);
 
   const [delegatingTask, setDelegatingTask] = useState(null);
   const [delegateTargetIds, setDelegateTargetIds] = useState([]);
@@ -341,17 +395,21 @@ export default function App() {
   const [handoverTask, setHandoverTask] = useState(null);
   const [handoverNote, setHandoverNote] = useState('');
 
+  // Complete Task Modal State (Now supports multiple completion proof photos)
   const [completingTask, setCompletingTask] = useState(null);
   const [completionNote, setCompletionNote] = useState('');
-  const [completionPhoto, setCompletionPhoto] = useState(null);
+  const [completionPhotos, setCompletionPhotos] = useState([]);
 
   const [commentInputs, setCommentInputs] = useState({});
   const [lightboxImage, setLightboxImage] = useState(null);
   const [lightboxTitle, setLightboxTitle] = useState('');
 
+  // Add New Team Member State (Includes Contracted Days & Standing Shift Presets)
   const [newUserName, setNewUserName] = useState('');
   const [newUserRole, setNewUserRole] = useState('colleague');
   const [newUserPin, setNewUserPin] = useState('1234');
+  const [newUserDays, setNewUserDays] = useState([]);
+  const [newUserPresets, setNewUserPresets] = useState([]);
 
   const [qrEmailInput, setQrEmailInput] = useState('');
   const [qrPasswordInput, setQrPasswordInput] = useState('');
@@ -509,16 +567,29 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Load Blackout Dates from Firestore
+  // Load Blackout Dates & Auto-Drop Config from Firestore
   useEffect(() => {
     if (!fbUser) return;
     const blackoutRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'blackouts');
-    const unsubscribe = onSnapshot(blackoutRef, (docSnap) => {
+    const unsubBlackouts = onSnapshot(blackoutRef, (docSnap) => {
       if (docSnap.exists()) {
         setBlackoutDates(docSnap.data().dates || {});
       }
     });
-    return () => unsubscribe();
+
+    const dailyDropRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'dailyAutoDrop');
+    const unsubAutoDrop = onSnapshot(dailyDropRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setLastAutoDropDate(docSnap.data().lastRunDate || '');
+      } else {
+        setLastAutoDropDate('');
+      }
+    });
+
+    return () => {
+      unsubBlackouts();
+      unsubAutoDrop();
+    };
   }, [fbUser]);
 
   const handleToggleBlackoutDate = async (dateStr) => {
@@ -551,7 +622,7 @@ export default function App() {
         const loaded = [];
         snapshot.forEach((d) => loaded.push({ id: d.id, ...d.data() }));
         const rolePriority = { manager: 1, team_leader: 2, colleague: 3 };
-        loaded.sort((a, b) => (rolePriority[a.role] || 9) - (rolePriority[b.role] || 9) || a.name.localeCompare(b.name));
+        loaded.sort((a, b) => (rolePriority[a.role] || 9) - (rolePriority[b.role] || 9) || (a.name || '').localeCompare(b.name || ''));
         setTeamUsers(loaded);
       }
     });
@@ -599,6 +670,44 @@ export default function App() {
       localStorage.removeItem(SESSION_STORAGE_KEY);
     }
   }, [teamUsers]);
+
+  // Helper to expand date ranges for holiday requests
+  const getDatesInRange = (startDateStr, endDateStr) => {
+    if (!startDateStr) return [];
+    const start = new Date(startDateStr);
+    const end = endDateStr ? new Date(endDateStr) : new Date(startDateStr);
+    if (isNaN(start.getTime())) return [];
+
+    const arr = [];
+    let current = new Date(start);
+    let safety = 0;
+    while (current <= (isNaN(end.getTime()) ? start : end) && safety < 366) {
+      arr.push(current.toISOString().split('T')[0]);
+      current.setDate(current.getDate() + 1);
+      safety++;
+    }
+    return arr;
+  };
+
+  // Check if a colleague has an Approved Holiday on a given YYYY-MM-DD date
+  const isUserOnApprovedHoliday = (userId, isoDateStr) => {
+    return requests.some((req) => {
+      if (req.requesterId !== userId) return false;
+      if (req.type !== 'Time Off / Holiday' || req.status !== 'approved') return false;
+      const datesArr = getDatesInRange(req.startDate || req.dates, req.endDate || req.startDate || req.dates);
+      return datesArr.includes(isoDateStr);
+    });
+  };
+
+  // Determine which colleagues are contracted & working today (and not on approved holiday)
+  const todayDayCode = getTodayDayCode();
+  const todayIsoDate = getTodayIsoDate();
+
+  const isUserOnShiftToday = (u) => {
+    if (!Array.isArray(u.contractedDays) || !u.contractedDays.includes(todayDayCode)) return false;
+    if (isUserOnApprovedHoliday(u.id, todayIsoDate)) return false;
+    return true;
+  };
 
   const isSupervisor = currentUser?.role === 'manager' || currentUser?.role === 'team_leader';
   const myNotifications = currentUser
@@ -681,6 +790,109 @@ export default function App() {
     }
   };
 
+  // ==========================================
+  // DAILY STANDING ROUTINE AUTO-ALLOCATION
+  // ==========================================
+  const handleRunDailyStandingTasks = async (isManualTrigger = false) => {
+    if (autoDropRunningRef.current || teamUsers.length === 0) return;
+    autoDropRunningRef.current = true;
+
+    try {
+      const todayIso = getTodayIsoDate();
+      const dayCode = getTodayDayCode();
+      const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
+      let createdCount = 0;
+
+      for (const u of teamUsers) {
+        const userDays = Array.isArray(u.contractedDays) ? u.contractedDays : [];
+        const userPresets = Array.isArray(u.defaultPresets) ? u.defaultPresets : [];
+
+        if (!userDays.includes(dayCode) || userPresets.length === 0) continue;
+        if (isUserOnApprovedHoliday(u.id, todayIso)) continue;
+
+        for (const presetId of userPresets) {
+          const presetObj = TASK_PRESETS.find((p) => p.id === presetId);
+          if (!presetObj || !presetObj.title) continue;
+
+          // Prevent duplicates if that colleague already has this task dropped today
+          const alreadyExistsToday = tasks.some(
+            (t) =>
+              t.assigneeId === u.id &&
+              t.title === presetObj.title &&
+              (t.autoAssignedDate === todayIso || (t.createdAt && t.createdAt.startsWith(todayIso)))
+          );
+
+          if (!alreadyExistsToday) {
+            await addDoc(tasksRef, {
+              title: presetObj.title,
+              description: presetObj.description,
+              priority: 'standard',
+              progressStatus: 'not_started',
+              startedAt: null,
+              pausedAt: null,
+              pauseReason: '',
+              pauseHistory: [],
+              handoverFromId: null,
+              handoverFromName: null,
+              handoverNote: '',
+              handoverHistory: [],
+              assigneeId: u.id,
+              assigneeName: u.name,
+              assigneeRole: u.role,
+              createdById: 'system-auto',
+              createdByName: 'Daily Shift Auto-Drop',
+              autoAssignedDate: todayIso,
+              delegatedByName: null,
+              managerPhoto: null,
+              managerPhotos: [],
+              completionPhoto: null,
+              completionPhotos: [],
+              completionNote: '',
+              comments: [],
+              status: 'active',
+              createdAt: new Date().toISOString(),
+              completedAt: null,
+              validatedAt: null
+            });
+
+            await sendNotification(
+              u.id,
+              null,
+              `Daily Shift Task (${dayCode})`,
+              `Your contracted shift task "${presetObj.title}" has been added to your list.`
+            );
+            createdCount++;
+          }
+        }
+      }
+
+      await setDoc(
+        doc(db, 'artifacts', appId, 'public', 'data', 'config', 'dailyAutoDrop'),
+        { lastRunDate: todayIso, lastRunDay: dayCode, updatedAt: new Date().toISOString() },
+        { merge: true }
+      );
+
+      if (createdCount > 0) {
+        showToast("Daily Shift Tasks Dropped", `Auto-allocated ${createdCount} standing task(s) for ${dayCode}.`);
+      } else if (isManualTrigger) {
+        showToast("Up to Date", `All contracted ${dayCode} standing tasks are already on the board.`);
+      }
+    } catch (err) {
+      console.error("Auto-drop error:", err);
+    } finally {
+      autoDropRunningRef.current = false;
+    }
+  };
+
+  // Automatically trigger daily standing tasks once per calendar day when app is opened
+  useEffect(() => {
+    if (!fbUser || !currentUser || teamUsers.length === 0 || lastAutoDropDate === null) return;
+    const todayIso = getTodayIsoDate();
+    if (lastAutoDropDate !== todayIso) {
+      handleRunDailyStandingTasks(false);
+    }
+  }, [fbUser, currentUser?.id, teamUsers.length, lastAutoDropDate]);
+
   const handleLoginSubmit = (e) => {
     e.preventDefault();
     if (!loginTarget) return;
@@ -716,9 +928,19 @@ export default function App() {
 
   const startEditUser = (u) => {
     setEditingUserId(u.id);
-    setEditUserName(u.name);
-    setEditUserRole(u.role);
+    setEditUserName(u.name || '');
+    setEditUserRole(u.role || 'colleague');
     setEditUserPin(u.pin || '1234');
+    setEditUserDays(Array.isArray(u.contractedDays) ? u.contractedDays : []);
+    setEditUserPresets(Array.isArray(u.defaultPresets) ? u.defaultPresets : []);
+  };
+
+  const toggleDayInList = (day, list, setter) => {
+    setter(list.includes(day) ? list.filter((d) => d !== day) : [...list, day]);
+  };
+
+  const togglePresetInList = (presetId, list, setter) => {
+    setter(list.includes(presetId) ? list.filter((p) => p !== presetId) : [...list, presetId]);
   };
 
   const handleSaveEditUser = async (userId) => {
@@ -726,21 +948,45 @@ export default function App() {
     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', userId), {
       name: editUserName.trim(),
       role: editUserRole,
-      pin: editUserPin.trim()
+      pin: editUserPin.trim(),
+      contractedDays: editUserDays,
+      defaultPresets: editUserPresets
     });
     setEditingUserId(null);
-    showToast("Profile Updated", `Saved changes for ${editUserName.trim()}.`);
+    showToast("Profile Updated", `Saved shift days & routine tasks for ${editUserName.trim()}.`);
   };
 
-  const handlePhotoUpload = async (e, setter) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const compressed = await compressImage(file);
-      setter(compressed);
-    } catch {
-      showToast("Photo Error", "Could not process photo.");
+  // Multi-Photo Upload Handler (Supports selecting multiple photos or snapping several one by one)
+  const handleMultiPhotoUpload = async (e, currentPhotos, setter) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const remainingSlots = 6 - currentPhotos.length;
+    if (remainingSlots <= 0) {
+      showToast("Maximum Photos Reached", "You can attach up to 6 photos per task.");
+      e.target.value = '';
+      return;
     }
+
+    const filesToProcess = files.slice(0, remainingSlots);
+    try {
+      const compressedList = [];
+      for (const file of filesToProcess) {
+        const compressed = await compressImage(file);
+        compressedList.push(compressed);
+      }
+      setter((prev) => [...prev, ...compressedList]);
+      if (files.length > remainingSlots) {
+        showToast("Limit Note", "Added up to the 6-photo maximum.");
+      }
+    } catch {
+      showToast("Photo Error", "Could not process one or more photos.");
+    }
+    e.target.value = '';
+  };
+
+  const removePhotoFromList = (indexToRemove, setter) => {
+    setter((prev) => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
   const toggleTaskAssignee = (userId) => {
@@ -787,8 +1033,10 @@ export default function App() {
         createdById: currentUser.id,
         createdByName: currentUser.name,
         delegatedByName: null,
-        managerPhoto: taskPhoto || null,
+        managerPhoto: taskPhotos[0] || null,
+        managerPhotos: taskPhotos,
         completionPhoto: null,
+        completionPhotos: [],
         completionNote: '',
         comments: [],
         status: 'active',
@@ -810,7 +1058,7 @@ export default function App() {
     setTaskDesc('');
     setTaskPriority('standard');
     setTaskAssigneeIds([]);
-    setTaskPhoto(null);
+    setTaskPhotos([]);
     showToast("Task Assigned", `Assigned to ${selectedUsers.map((u) => u.name).join(', ')}`);
   };
 
@@ -963,6 +1211,7 @@ export default function App() {
       await sendNotification(target.id, null, 'Task Assigned to You', `${currentUser.name} assigned "${delegatingTask.title}" to you.`);
     } else {
       const tasksRef = collection(db, 'artifacts', appId, 'public', 'data', 'tasks');
+      const existingMgrPhotos = getTaskManagerPhotos(delegatingTask);
       for (const target of targetColleagues) {
         await addDoc(tasksRef, {
           title: delegatingTask.title,
@@ -984,8 +1233,10 @@ export default function App() {
           createdByName: delegatingTask.createdByName || 'Manager',
           delegatedByName: currentUser.name,
           delegatedAt: nowIso,
-          managerPhoto: delegatingTask.managerPhoto || null,
+          managerPhoto: existingMgrPhotos[0] || null,
+          managerPhotos: existingMgrPhotos,
           completionPhoto: null,
+          completionPhotos: [],
           completionNote: '',
           comments: delegatingTask.comments || [],
           status: 'active',
@@ -1071,13 +1322,19 @@ export default function App() {
     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'tasks', completingTask.id), {
       status: 'pending_validation',
       completionNote: completionNote.trim(),
-      completionPhoto: completionPhoto || null,
+      completionPhoto: completionPhotos[0] || null,
+      completionPhotos: completionPhotos,
       completedAt: new Date().toISOString()
     });
-    await sendNotification(null, 'supervisors', 'Task Ready for Validation', `${currentUser.name} completed "${completingTask.title}".`);
+    await sendNotification(
+      null,
+      'supervisors',
+      'Task Ready for Validation',
+      `${currentUser.name} completed "${completingTask.title}" (${completionPhotos.length} photo${completionPhotos.length === 1 ? '' : 's'}).`
+    );
     setCompletingTask(null);
     setCompletionNote('');
-    setCompletionPhoto(null);
+    setCompletionPhotos([]);
     showToast("Sent for Validation", "Supervisors have been alerted.");
   };
 
@@ -1121,22 +1378,6 @@ export default function App() {
     }
   };
 
-  // Helper to expand date ranges for holiday requests
-  const getDatesInRange = (startDateStr, endDateStr) => {
-    if (!startDateStr) return [];
-    const start = new Date(startDateStr);
-    const end = endDateStr ? new Date(endDateStr) : new Date(startDateStr);
-    if (isNaN(start.getTime())) return [];
-    
-    const arr = [];
-    let current = new Date(start);
-    while (current <= (isNaN(end.getTime()) ? start : end)) {
-      arr.push(current.toISOString().split('T')[0]);
-      current.setDate(current.getDate() + 1);
-    }
-    return arr;
-  };
-
   const handleCreateRequest = async (e) => {
     e.preventDefault();
     if (!reqStartDate || !reqNote.trim()) {
@@ -1144,7 +1385,6 @@ export default function App() {
       return;
     }
 
-    // Check if any date in the requested range is blacked out
     const requestedDates = getDatesInRange(reqStartDate, reqEndDate || reqStartDate);
     const hasBlackout = requestedDates.some((dStr) => blackoutDates[dStr]);
     if (hasBlackout && currentUser.role !== 'manager') {
@@ -1195,10 +1435,14 @@ export default function App() {
       role: newUserRole,
       pin: newUserPin.trim(),
       color: randomColor,
-      fcmTokens: []
+      fcmTokens: [],
+      contractedDays: newUserDays,
+      defaultPresets: newUserPresets
     });
     setNewUserName('');
     setNewUserPin('1234');
+    setNewUserDays([]);
+    setNewUserPresets([]);
     showToast("Team Member Added", `${newUserName.trim()} can now log in.`);
   };
 
@@ -1281,11 +1525,11 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div className={`w-10 h-10 rounded-xl ${loginTarget.color || 'bg-indigo-600'} flex items-center justify-center font-bold`}>
-                    {loginTarget.name[0]}
+                    {(loginTarget.name || 'U')[0]}
                   </div>
                   <div>
                     <h3 className="font-bold text-sm">Log in as {loginTarget.name}</h3>
-                    <p className="text-xs text-indigo-300 capitalize">{loginTarget.role.replace('_', ' ')}</p>
+                    <p className="text-xs text-indigo-300 capitalize">{(loginTarget.role || 'colleague').replace('_', ' ')}</p>
                   </div>
                 </div>
                 <button onClick={() => { setLoginTarget(null); setLoginError(''); }} className="text-slate-400 hover:text-white">
@@ -1341,7 +1585,7 @@ export default function App() {
                     className="p-3 rounded-xl bg-violet-600/30 hover:bg-violet-600/50 border border-violet-400/30 transition-all text-left flex items-center justify-between">
                     <div className="flex items-center space-x-2.5 truncate">
                       <div className={`w-8 h-8 rounded-lg ${u.color || 'bg-violet-600'} text-white font-bold flex items-center justify-center text-xs`}>
-                        {u.name[0]}
+                        {(u.name || 'T')[0]}
                       </div>
                       <div className="truncate">
                         <h4 className="font-bold text-xs truncate">{u.name}</h4>
@@ -1363,7 +1607,7 @@ export default function App() {
                     onClick={() => { setLoginTarget(u); setPinInput(''); setLoginError(''); }}
                     className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-all text-left flex items-center space-x-2.5">
                     <div className={`w-8 h-8 rounded-lg ${u.color || 'bg-blue-600'} text-white font-bold flex items-center justify-center text-xs shrink-0`}>
-                      {u.name[0]}
+                      {(u.name || 'C')[0]}
                     </div>
                     <div className="truncate">
                       <h4 className="font-bold text-xs truncate">{u.name}</h4>
@@ -1391,6 +1635,7 @@ export default function App() {
 
   const colleaguesOnly = teamUsers.filter((u) => u.role === 'colleague');
   const teamLeadersOnly = teamUsers.filter((u) => u.role === 'team_leader');
+  const onShiftTodayUsers = assignableUsers.filter((u) => isUserOnShiftToday(u));
 
   const myAssignedTasks = sortTasksByPriorityAndDate(
     tasks.filter((t) => t.assigneeId === currentUser.id && t.status === 'active')
@@ -1553,6 +1798,7 @@ export default function App() {
     const isInProgress = t.progressStatus === 'in_progress';
     const isPaused = t.progressStatus === 'paused';
     const isIncomplete = t.progressStatus === 'incomplete';
+    const mgrPhotos = getTaskManagerPhotos(t);
 
     return (
       <div
@@ -1601,6 +1847,11 @@ export default function App() {
                   Started by {t.handoverFromName}
                 </span>
               )}
+              {t.createdById === 'system-auto' && (
+                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-semibold">
+                  Shift Routine
+                </span>
+              )}
             </div>
             <h4 className="font-bold text-slate-900 text-sm pt-0.5">{t.title}</h4>
             <p className="text-slate-600 text-xs whitespace-pre-line">{t.description}</p>
@@ -1608,6 +1859,19 @@ export default function App() {
               <p className="text-xs text-orange-900 bg-orange-100/70 px-2.5 py-1.5 rounded-lg border border-orange-200 font-medium">
                 Handover Note: "{t.handoverNote}"
               </p>
+            )}
+            {mgrPhotos.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {mgrPhotos.map((imgUrl, idx) => (
+                  <img
+                    key={idx}
+                    src={imgUrl}
+                    alt={`Reference ${idx + 1}`}
+                    onClick={() => { setLightboxTitle(`Reference Photo ${idx + 1} of ${mgrPhotos.length}`); setLightboxImage(imgUrl); }}
+                    className="h-14 w-20 object-cover rounded-lg border border-slate-300 cursor-pointer hover:opacity-90"
+                  />
+                ))}
+              </div>
             )}
           </div>
           <button
@@ -1669,7 +1933,7 @@ export default function App() {
           className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 cursor-pointer">
           {lightboxTitle && (
             <div className="mb-4 px-4 py-1.5 rounded-full bg-white text-slate-900 font-bold text-sm">
-              {lightboxTitle} — Point Terminal Scanner Here
+              {lightboxTitle}
             </div>
           )}
           <div className="bg-white p-4 rounded-3xl shadow-2xl">
@@ -1783,13 +2047,18 @@ export default function App() {
             <form onSubmit={handleConfirmDelegation} className="space-y-4">
               <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1">
                 {colleaguesOnly.map((col) => (
-                  <label key={col.id} className="flex items-center space-x-2.5 p-2 rounded-lg cursor-pointer text-xs hover:bg-slate-50">
-                    <input
-                      type="checkbox"
-                      checked={delegateTargetIds.includes(col.id)}
-                      onChange={() => toggleDelegateTarget(col.id)}
-                    />
-                    <span className="font-semibold">{col.name}</span>
+                  <label key={col.id} className="flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs hover:bg-slate-50">
+                    <div className="flex items-center space-x-2.5">
+                      <input
+                        type="checkbox"
+                        checked={delegateTargetIds.includes(col.id)}
+                        onChange={() => toggleDelegateTarget(col.id)}
+                      />
+                      <span className="font-semibold">{col.name}</span>
+                    </div>
+                    {isUserOnShiftToday(col) && (
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">On Shift</span>
+                    )}
                   </label>
                 ))}
               </div>
@@ -1809,13 +2078,13 @@ export default function App() {
         </div>
       )}
 
-      {/* Task Completion Modal */}
+      {/* Task Completion Modal (Supports Multiple Proof Photos) */}
       {completingTask && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="font-bold text-slate-900 text-base">Complete Task & Attach Proof</h3>
-              <button onClick={() => setCompletingTask(null)}><X className="w-5 h-5 text-slate-400"/></button>
+              <h3 className="font-bold text-slate-900 text-base">Complete Task & Attach Proof Photos</h3>
+              <button onClick={() => { setCompletingTask(null); setCompletionPhotos([]); }}><X className="w-5 h-5 text-slate-400"/></button>
             </div>
             <form onSubmit={handleConfirmCompletion} className="space-y-4">
               <textarea
@@ -1826,15 +2095,79 @@ export default function App() {
                 placeholder="Add completion notes..."
                 className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-sm"
               />
-              <label className="flex items-center justify-center space-x-2 w-full py-3 px-4 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer">
-                <Camera className="w-5 h-5 text-indigo-600"/>
-                <span className="text-xs font-semibold">{completionPhoto ? 'Change Photo' : 'Take or Upload Photo'}</span>
-                <input type="file" accept="image/*" capture="environment" onChange={(e) => handlePhotoUpload(e, setCompletionPhoto)} className="hidden"/>
-              </label>
-              {completionPhoto && <img src={completionPhoto} alt="Preview" className="h-32 w-full object-cover rounded-xl"/>}
-              <div className="flex justify-end space-x-2">
-                <button type="button" onClick={() => setCompletingTask(null)} className="px-4 py-2 rounded-xl bg-slate-100 text-xs font-semibold">Cancel</button>
-                <button type="submit" className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold">Submit for Validation</button>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-600 uppercase">
+                    Proof Photos ({completionPhotos.length}/6)
+                  </span>
+                  {completionPhotos.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setCompletionPhotos([])}
+                      className="text-[11px] font-semibold text-rose-600">
+                      Clear All
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex items-center justify-center space-x-1.5 py-2.5 px-3 border-2 border-dashed border-indigo-300 bg-indigo-50/40 hover:bg-indigo-50 rounded-xl cursor-pointer text-indigo-700">
+                    <Camera className="w-4 h-4 shrink-0"/>
+                    <span className="text-xs font-bold">Snap Photo</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(e) => handleMultiPhotoUpload(e, completionPhotos, setCompletionPhotos)}
+                      className="hidden"
+                    />
+                  </label>
+                  <label className="flex items-center justify-center space-x-1.5 py-2.5 px-3 border-2 border-dashed border-slate-300 hover:bg-slate-50 rounded-xl cursor-pointer text-slate-700">
+                    <Plus className="w-4 h-4 shrink-0"/>
+                    <span className="text-xs font-bold">Pick Multiple</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => handleMultiPhotoUpload(e, completionPhotos, setCompletionPhotos)}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                {completionPhotos.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2 pt-1">
+                    {completionPhotos.map((imgUrl, idx) => (
+                      <div key={idx} className="relative group">
+                        <img
+                          src={imgUrl}
+                          alt={`Proof ${idx + 1}`}
+                          onClick={() => { setLightboxTitle(`Proof Photo ${idx + 1}`); setLightboxImage(imgUrl); }}
+                          className="h-20 w-full object-cover rounded-xl border border-slate-200 cursor-pointer"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removePhotoFromList(idx, setCompletionPhotos)}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center text-[10px] font-bold shadow">
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setCompletingTask(null); setCompletionPhotos([]); }}
+                  className="px-4 py-2 rounded-xl bg-slate-100 text-xs font-semibold">
+                  Cancel
+                </button>
+                <button type="submit" className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold">
+                  Submit for Validation
+                </button>
               </div>
             </form>
           </div>
@@ -1849,9 +2182,9 @@ export default function App() {
               <Layers className="w-5 h-5"/>
             </div>
             <div>
-              <h1 className="font-bold text-base text-slate-900 leading-tight">Grocery Tasks</h1>
+              <h1 className="font-bold text-base text-slate-900 leading-tight">Grocery Task Manager</h1>
               <p className="text-[11px] text-slate-500 font-medium capitalize">
-                {currentUser.name} • {currentUser.role.replace('_', ' ')}
+                {currentUser.name} • {(currentUser.role || 'colleague').replace('_', ' ')} • {todayDayCode}
               </p>
             </div>
           </div>
@@ -1971,7 +2304,7 @@ export default function App() {
               activeTab === 'requests' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
             }`}>
             <Calendar className="w-3.5 h-3.5"/>
-            <span>{isSupervisor ? `Colleague Requests (${pendingRequestsCount})` : 'Holiday & Requests'}</span>
+            <span>{isSupervisor ? `Holiday & Requests (${pendingRequestsCount})` : 'Holiday & Requests'}</span>
           </button>
 
           {isManager && (
@@ -1994,11 +2327,21 @@ export default function App() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Left Column: Assign New Task Form */}
             <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-5 shadow-xs">
-              <div className="flex items-center space-x-3 pb-3 border-b border-slate-100">
-                <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                  <Plus className="w-4 h-4"/>
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                    <Plus className="w-4 h-4"/>
+                  </div>
+                  <h2 className="font-bold text-slate-800 text-base">Assign New Task</h2>
                 </div>
-                <h2 className="font-bold text-slate-800 text-base">Assign New Task</h2>
+                <button
+                  type="button"
+                  onClick={() => handleRunDailyStandingTasks(true)}
+                  className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px] flex items-center space-x-1"
+                  title="Drop contracted standing tasks for colleagues working today">
+                  <Sparkles className="w-3.5 h-3.5"/>
+                  <span>Drop {todayDayCode} Routine</span>
+                </button>
               </div>
 
               <form onSubmit={handleCreateTask} className="space-y-4">
@@ -2087,6 +2430,12 @@ export default function App() {
                   <div className="flex flex-wrap gap-1.5">
                     <button
                       type="button"
+                      onClick={() => setTaskAssigneeIds(onShiftTodayUsers.map((u) => u.id))}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[11px] font-bold">
+                      On Shift Today ({onShiftTodayUsers.length})
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setTaskAssigneeIds(colleaguesOnly.map((c) => c.id))}
                       className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-semibold">
                       All Colleagues ({colleaguesOnly.length})
@@ -2101,34 +2450,97 @@ export default function App() {
                     )}
                   </div>
                   <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1 bg-slate-50/50">
-                    {assignableUsers.map((m) => (
-                      <label
-                        key={m.id}
-                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs ${
-                          taskAssigneeIds.includes(m.id) ? 'bg-indigo-50 font-semibold text-indigo-900' : 'text-slate-700'
-                        }`}>
-                        <div className="flex items-center space-x-2.5">
-                          <input
-                            type="checkbox"
-                            checked={taskAssigneeIds.includes(m.id)}
-                            onChange={() => toggleTaskAssignee(m.id)}
-                          />
-                          <span>{m.name}</span>
-                        </div>
-                        <span className="text-[10px] text-slate-400 capitalize">{m.role.replace('_', ' ')}</span>
-                      </label>
-                    ))}
+                    {assignableUsers.map((m) => {
+                      const onShift = isUserOnShiftToday(m);
+                      const onHoliday = isUserOnApprovedHoliday(m.id, todayIsoDate);
+                      return (
+                        <label
+                          key={m.id}
+                          className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs ${
+                            taskAssigneeIds.includes(m.id) ? 'bg-indigo-50 font-semibold text-indigo-900' : 'text-slate-700'
+                          }`}>
+                          <div className="flex items-center space-x-2.5">
+                            <input
+                              type="checkbox"
+                              checked={taskAssigneeIds.includes(m.id)}
+                              onChange={() => toggleTaskAssignee(m.id)}
+                            />
+                            <span>{m.name}</span>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            {onHoliday && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold">Holiday</span>
+                            )}
+                            {onShift && (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">On Shift</span>
+                            )}
+                            <span className="text-[10px] text-slate-400 capitalize">{(m.role || '').replace('_', ' ')}</span>
+                          </div>
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
 
-                <div>
-                  <label className="flex items-center justify-center space-x-2 w-full py-2.5 px-3 border border-dashed border-slate-300 rounded-xl cursor-pointer hover:bg-slate-50">
-                    <Camera className="w-4 h-4 text-indigo-600"/>
-                    <span className="text-xs font-medium text-slate-600">
-                      {taskPhoto ? 'Reference Photo Attached' : 'Attach Reference Photo (Optional)'}
+                {/* Multiple Reference Photos Section */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-600 uppercase">
+                      Reference Photos ({taskPhotos.length}/6)
                     </span>
-                    <input type="file" accept="image/*" onChange={(e) => handlePhotoUpload(e, setTaskPhoto)} className="hidden"/>
-                  </label>
+                    {taskPhotos.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setTaskPhotos([])}
+                        className="text-[11px] font-semibold text-rose-600">
+                        Clear Photos
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="flex items-center justify-center space-x-1.5 py-2 px-3 border border-dashed border-indigo-300 bg-indigo-50/30 rounded-xl cursor-pointer hover:bg-indigo-50">
+                      <Camera className="w-4 h-4 text-indigo-600 shrink-0"/>
+                      <span className="text-xs font-semibold text-indigo-700">Snap Photo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={(e) => handleMultiPhotoUpload(e, taskPhotos, setTaskPhotos)}
+                        className="hidden"
+                      />
+                    </label>
+                    <label className="flex items-center justify-center space-x-1.5 py-2 px-3 border border-dashed border-slate-300 rounded-xl cursor-pointer hover:bg-slate-50">
+                      <Plus className="w-4 h-4 text-slate-600 shrink-0"/>
+                      <span className="text-xs font-semibold text-slate-600">Pick Multiple</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => handleMultiPhotoUpload(e, taskPhotos, setTaskPhotos)}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                  {taskPhotos.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                      {taskPhotos.map((imgUrl, idx) => (
+                        <div key={idx} className="relative">
+                          <img
+                            src={imgUrl}
+                            alt={`Ref ${idx + 1}`}
+                            onClick={() => { setLightboxTitle(`Reference Photo ${idx + 1}`); setLightboxImage(imgUrl); }}
+                            className="h-16 w-full object-cover rounded-lg border border-slate-200 cursor-pointer"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removePhotoFromList(idx, setTaskPhotos)}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center text-[10px] font-bold">
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -2204,47 +2616,60 @@ export default function App() {
                     {allPendingTasks.length === 0 ? (
                       <p className="text-xs text-slate-400 italic text-center py-4">No tasks waiting for validation.</p>
                     ) : (
-                      allPendingTasks.map((t) => (
-                        <div key={t.id} className="p-4 rounded-xl border border-amber-200 bg-amber-50/30 space-y-3">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <div>
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="px-2 py-0.5 bg-indigo-600 text-white rounded text-[11px] font-bold">
-                                  Completed by {t.assigneeName}
-                                </span>
-                                {t.handoverFromName && (
-                                  <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded text-[11px] font-semibold">
-                                    Started by {t.handoverFromName}
+                      allPendingTasks.map((t) => {
+                        const proofPhotos = getTaskCompletionPhotos(t);
+                        return (
+                          <div key={t.id} className="p-4 rounded-xl border border-amber-200 bg-amber-50/30 space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span className="px-2 py-0.5 bg-indigo-600 text-white rounded text-[11px] font-bold">
+                                    Completed by {t.assigneeName}
                                   </span>
-                                )}
+                                  {t.handoverFromName && (
+                                    <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded text-[11px] font-semibold">
+                                      Started by {t.handoverFromName}
+                                    </span>
+                                  )}
+                                  {proofPhotos.length > 0 && (
+                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold">
+                                      {proofPhotos.length} Photo{proofPhotos.length === 1 ? '' : 's'}
+                                    </span>
+                                  )}
+                                </div>
+                                <h4 className="font-bold text-slate-900 text-sm mt-1">{t.title}</h4>
+                                <p className="text-xs text-slate-600 mt-0.5">Note: "{t.completionNote || 'No note'}"</p>
                               </div>
-                              <h4 className="font-bold text-slate-900 text-sm mt-1">{t.title}</h4>
-                              <p className="text-xs text-slate-600 mt-0.5">Note: "{t.completionNote || 'No note'}"</p>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  onClick={() => handleReturnTask(t)}
+                                  className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold rounded-xl text-xs">
+                                  Send Back
+                                </button>
+                                <button
+                                  onClick={() => handleValidateTask(t)}
+                                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs flex items-center space-x-1">
+                                  <Check className="w-4 h-4"/>
+                                  <span>Validate & Archive</span>
+                                </button>
+                              </div>
                             </div>
-                            <div className="flex items-center space-x-2">
-                              <button
-                                onClick={() => handleReturnTask(t)}
-                                className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold rounded-xl text-xs">
-                                Send Back
-                              </button>
-                              <button
-                                onClick={() => handleValidateTask(t)}
-                                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs flex items-center space-x-1">
-                                <Check className="w-4 h-4"/>
-                                <span>Validate & Archive</span>
-                              </button>
-                            </div>
+                            {proofPhotos.length > 0 && (
+                              <div className="flex flex-wrap gap-2">
+                                {proofPhotos.map((imgUrl, idx) => (
+                                  <img
+                                    key={idx}
+                                    src={imgUrl}
+                                    alt={`Proof ${idx + 1}`}
+                                    onClick={() => { setLightboxTitle(`Completion Proof ${idx + 1} of ${proofPhotos.length}`); setLightboxImage(imgUrl); }}
+                                    className="h-24 w-32 object-cover rounded-xl border-2 border-emerald-500 cursor-pointer hover:opacity-90"
+                                  />
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          {t.completionPhoto && (
-                            <img
-                              src={t.completionPhoto}
-                              alt="Proof"
-                              onClick={() => { setLightboxTitle('Completion Proof'); setLightboxImage(t.completionPhoto); }}
-                              className="h-28 w-40 object-cover rounded-xl border-2 border-emerald-500 cursor-pointer"
-                            />
-                          )}
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 )}
@@ -2351,29 +2776,37 @@ export default function App() {
                       <p className="text-xs text-slate-400 italic text-center py-4">No archived tasks yet.</p>
                     ) : (
                       <div className="divide-y divide-slate-100">
-                        {allArchivedTasks.map((t) => (
-                          <div key={t.id} className="py-2.5 flex items-center justify-between text-xs">
-                            <div>
-                              <p className="font-bold text-slate-800">{t.title}</p>
-                              <p className="text-slate-500">
-                                Completed by {t.assigneeName}
-                                {t.handoverFromName ? ` (Started by ${t.handoverFromName})` : ''}
-                              </p>
+                        {allArchivedTasks.map((t) => {
+                          const proofPhotos = getTaskCompletionPhotos(t);
+                          return (
+                            <div key={t.id} className="py-2.5 flex items-center justify-between gap-2 text-xs">
+                              <div>
+                                <p className="font-bold text-slate-800">{t.title}</p>
+                                <p className="text-slate-500">
+                                  Completed by {t.assigneeName}
+                                  {t.handoverFromName ? ` (Started by ${t.handoverFromName})` : ''}
+                                </p>
+                              </div>
+                              <div className="text-right space-y-1">
+                                {proofPhotos.length > 0 && (
+                                  <div className="flex justify-end gap-1">
+                                    {proofPhotos.map((imgUrl, idx) => (
+                                      <button
+                                        key={idx}
+                                        onClick={() => { setLightboxTitle(`Archived Proof ${idx + 1}`); setLightboxImage(imgUrl); }}
+                                        className="px-2 py-0.5 bg-indigo-50 text-indigo-600 font-semibold rounded text-[10px]">
+                                        Photo {idx + 1}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                                <span className="text-[11px] text-emerald-600 font-medium block">
+                                  Signed off by {t.validatedByName || 'Manager'}
+                                </span>
+                              </div>
                             </div>
-                            <div className="text-right">
-                              {t.completionPhoto && (
-                                <button
-                                  onClick={() => { setLightboxTitle('Proof Photo'); setLightboxImage(t.completionPhoto); }}
-                                  className="text-indigo-600 font-semibold underline block">
-                                  View Photo
-                                </button>
-                              )}
-                              <span className="text-[11px] text-emerald-600 font-medium">
-                                Signed off by {t.validatedByName || 'Manager'}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -2438,11 +2871,11 @@ export default function App() {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-2.5 truncate">
                             <div className={`w-8 h-8 rounded-lg ${m.user.color || 'bg-indigo-600'} text-white font-bold flex items-center justify-center text-xs shrink-0`}>
-                              {m.user.name[0]}
+                              {(m.user.name || 'U')[0]}
                             </div>
                             <div className="truncate">
                               <h4 className="font-bold text-slate-900 text-xs truncate">{m.user.name}</h4>
-                              <p className="text-[10px] text-slate-500 capitalize">{m.user.role.replace('_', ' ')}</p>
+                              <p className="text-[10px] text-slate-500 capitalize">{(m.user.role || '').replace('_', ' ')}</p>
                             </div>
                           </div>
                           {m.handedOverCount > 0 && (
@@ -2564,7 +2997,6 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Permanent Handover Audit Trail */}
                         {(Array.isArray(t.handoverHistory) && t.handoverHistory.length > 0) ? (
                           <div className="bg-white/90 rounded-lg p-3 border border-orange-200 space-y-2">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-orange-800 block">
@@ -2596,7 +3028,6 @@ export default function App() {
                           </div>
                         ) : null}
 
-                        {/* Context-Only Routine Pause Log */}
                         {Array.isArray(t.pauseHistory) && t.pauseHistory.length > 0 && (
                           <div className="flex flex-wrap items-center gap-1.5 pt-1">
                             <span className="text-[10px] font-semibold text-slate-400">Routine Pauses (Context Only):</span>
@@ -2616,7 +3047,185 @@ export default function App() {
           </div>
         )}
 
-        {/* ================= REQUESTS TAB & HOLIDAY CALENDAR ================= */}
+        {/* ================= PERSONAL TASK LIST (COLLEAGUES & TEAM LEADERS) ================= */}
+        {((activeTab === 'tasks' && !isSupervisor) || activeTab === 'my_tl_tasks') && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-6">
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">
+                      {currentUser.role === 'team_leader' ? 'Tasks Assigned to Me by Manager' : 'My Active Tasks'}
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Tap Start Task when you begin, Pause if pulled away, or Handover if you cannot finish before your shift ends.
+                    </p>
+                  </div>
+                  <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-xs font-bold">
+                    {myAssignedTasks.length} Active
+                  </span>
+                </div>
+
+                {myAssignedTasks.length === 0 ? (
+                  <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto mb-3"/>
+                    <h4 className="font-bold text-slate-700 text-sm">All caught up!</h4>
+                    <p className="text-xs text-slate-400 mt-1">You have no active tasks on your list right now.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {myAssignedTasks.map((t) => {
+                      const isUrgent = t.priority === 'urgent';
+                      const isInProgress = t.progressStatus === 'in_progress';
+                      const isPaused = t.progressStatus === 'paused';
+                      const isIncomplete = t.progressStatus === 'incomplete';
+                      const mgrPhotos = getTaskManagerPhotos(t);
+
+                      return (
+                        <div
+                          key={t.id}
+                          className={`p-5 rounded-xl border space-y-4 ${
+                            isUrgent ? 'bg-rose-50/30 border-rose-300' : isPaused ? 'bg-amber-50/30 border-amber-300' : 'bg-white border-slate-200'
+                          }`}>
+                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                            <div className="space-y-1.5">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {isUrgent && (
+                                  <span className="px-2.5 py-0.5 bg-rose-600 text-white rounded-md text-[11px] font-bold uppercase">
+                                    Priority / First Job
+                                  </span>
+                                )}
+                                {isInProgress && (
+                                  <span className="px-2.5 py-0.5 bg-blue-100 text-blue-800 rounded-md text-[11px] font-bold">
+                                    In Progress
+                                  </span>
+                                )}
+                                {isPaused && (
+                                  <span className="px-2.5 py-0.5 bg-amber-200 text-amber-900 rounded-md text-[11px] font-bold">
+                                    Paused: {t.pauseReason}
+                                  </span>
+                                )}
+                                {!isInProgress && !isPaused && !isIncomplete && (
+                                  <span className="px-2.5 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[11px] font-semibold">
+                                    Not Started
+                                  </span>
+                                )}
+                                {t.handoverFromName && (
+                                  <span className="px-2.5 py-0.5 bg-orange-100 text-orange-800 rounded-md text-[11px] font-semibold">
+                                    Handover from {t.handoverFromName}
+                                  </span>
+                                )}
+                              </div>
+                              <h4 className="font-bold text-slate-900 text-base">{t.title}</h4>
+                              <p className="text-xs text-slate-600 whitespace-pre-line">{t.description}</p>
+                              {t.handoverNote && (
+                                <p className="text-xs font-medium text-orange-900 bg-orange-50 p-2 rounded-lg border border-orange-200">
+                                  Handover Note: "{t.handoverNote}"
+                                </p>
+                              )}
+                              {mgrPhotos.length > 0 && (
+                                <div className="pt-1 space-y-1">
+                                  <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                                    Reference Photos ({mgrPhotos.length}) — Tap to Zoom
+                                  </span>
+                                  <div className="flex flex-wrap gap-2">
+                                    {mgrPhotos.map((imgUrl, idx) => (
+                                      <img
+                                        key={idx}
+                                        src={imgUrl}
+                                        alt={`Ref ${idx + 1}`}
+                                        onClick={() => { setLightboxTitle(`Reference Photo ${idx + 1}`); setLightboxImage(imgUrl); }}
+                                        className="h-16 w-24 object-cover rounded-lg border border-slate-300 cursor-pointer"
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap sm:flex-col sm:items-end gap-2 shrink-0">
+                              {(!isInProgress || isPaused) && (
+                                <button
+                                  onClick={() => handleStartOrResumeTask(t)}
+                                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs flex items-center space-x-1.5">
+                                  <Play className="w-3.5 h-3.5 fill-current"/>
+                                  <span>{isPaused ? 'Resume Task' : 'Start Task'}</span>
+                                </button>
+                              )}
+                              {isInProgress && (
+                                <button
+                                  onClick={() => { setPausingTask(t); setPauseReason(PAUSE_REASONS[0]); setCustomPauseReason(''); }}
+                                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl text-xs flex items-center space-x-1.5">
+                                  <Pause className="w-3.5 h-3.5"/>
+                                  <span>Pause Task</span>
+                                </button>
+                              )}
+                              {(isInProgress || isPaused) && !isIncomplete && (
+                                <button
+                                  onClick={() => { setHandoverTask(t); setHandoverNote(''); }}
+                                  className="px-3.5 py-1.5 bg-orange-50 text-orange-700 border border-orange-200 font-semibold rounded-xl text-xs">
+                                  Handover / Incomplete
+                                </button>
+                              )}
+                              <button
+                                onClick={() => { setCompletingTask(t); setCompletionPhotos([]); setCompletionNote(''); }}
+                                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs flex items-center space-x-2">
+                                <Camera className="w-4 h-4"/>
+                                <span>Complete & Add Photos</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2 pt-3 border-t border-slate-100">
+                            {(t.comments || []).map((c) => (
+                              <div key={c.id} className="text-xs bg-slate-50 p-2 rounded-lg">
+                                <span className="font-bold">{c.authorName}: </span>
+                                <span>{c.text}</span>
+                              </div>
+                            ))}
+                            <div className="flex space-x-2">
+                              <input
+                                type="text"
+                                value={commentInputs[t.id] || ''}
+                                onChange={(e) => setCommentInputs((prev) => ({ ...prev, [t.id]: e.target.value }))}
+                                placeholder="Leave a comment..."
+                                className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs"
+                              />
+                              <button onClick={() => handleAddComment(t)} className="px-3 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-semibold">
+                                Send
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-3">
+                <h3 className="font-bold text-slate-900 text-sm">Awaiting Validation ({myPendingTasks.length})</h3>
+                {myPendingTasks.map((t) => (
+                  <div key={t.id} className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs font-bold">
+                    {t.title}
+                  </div>
+                ))}
+              </div>
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-3">
+                <h3 className="font-bold text-slate-900 text-sm">Validated & Completed ({myArchivedTasks.length})</h3>
+                {myArchivedTasks.map((t) => (
+                  <div key={t.id} className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs font-bold">
+                    {t.title}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= REQUESTS TAB & MOBILE HOLIDAY CALENDAR ================= */}
         {activeTab === 'requests' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Left Column: Request Form */}
@@ -2691,17 +3300,16 @@ export default function App() {
               </form>
             </div>
 
-            {/* Right 2 Columns: Interactive Mobile Holiday Calendar & List */}
+            {/* Right 2 Columns: Mobile-Optimized Holiday Calendar & Requests List */}
             <div className="lg:col-span-2 space-y-6">
-              {/* Mobile-Optimized Holiday Calendar Grid */}
               <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-xs space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                   <div>
                     <h3 className="font-bold text-slate-900 text-base">Team Holiday & Availability Calendar</h3>
                     <p className="text-xs text-slate-500">Green = Approved, Amber = Pending, Dark = Blackout</p>
                   </div>
-                  
-                  <div className="flex items-center space-x-2">
+
+                  <div className="flex flex-wrap items-center gap-2">
                     {isManager && (
                       <button
                         type="button"
@@ -2709,10 +3317,10 @@ export default function App() {
                         className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${
                           managerBlackoutMode ? 'bg-rose-600 text-white border-rose-600' : 'bg-slate-100 text-slate-700 border-slate-200'
                         }`}>
-                        {managerBlackoutMode ? '🔴 Blackout Mode ON (Tap Days to Block)' : '🔒 Manage Blackouts'}
+                        {managerBlackoutMode ? 'Blackout Mode ON (Tap Days)' : 'Manage Blackouts'}
                       </button>
                     )}
-                    
+
                     <div className="flex items-center space-x-1 bg-slate-100 rounded-xl p-1">
                       <button
                         type="button"
@@ -2720,11 +3328,11 @@ export default function App() {
                           if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(calendarYear - 1); }
                           else { setCalendarMonth(calendarMonth - 1); }
                         }}
-                        className="p-1.5 hover:bg-white rounded-lg text-slate-700 font-bold text-xs">
-                        &lt;
+                        className="px-2.5 py-1 hover:bg-white rounded-lg text-slate-700 font-bold text-xs">
+                        Prev
                       </button>
-                      <span className="px-3 text-xs font-bold text-slate-800">
-                        {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][calendarMonth]} {calendarYear}
+                      <span className="px-2 text-xs font-bold text-slate-800">
+                        {MONTH_NAMES[calendarMonth]} {calendarYear}
                       </span>
                       <button
                         type="button"
@@ -2732,22 +3340,22 @@ export default function App() {
                           if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(calendarYear + 1); }
                           else { setCalendarMonth(calendarMonth + 1); }
                         }}
-                        className="p-1.5 hover:bg-white rounded-lg text-slate-700 font-bold text-xs">
-                        &gt;
+                        className="px-2.5 py-1 hover:bg-white rounded-lg text-slate-700 font-bold text-xs">
+                        Next
                       </button>
                     </div>
                   </div>
                 </div>
 
                 {/* 7-Column Grid Header */}
-                <div className="grid grid-cols-7 gap-1 text-center font-bold text-[11px] text-slate-400 uppercase">
-                  {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => <div key={d} className="py-1">{d}</div>)}
+                <div className="grid grid-cols-7 gap-1 text-center font-bold text-[10px] sm:text-[11px] text-slate-400 uppercase">
+                  {WEEK_DAYS.map((d) => <div key={d} className="py-1">{d}</div>)}
                 </div>
 
                 {/* Calendar Day Cells */}
                 <div className="grid grid-cols-7 gap-1">
                   {Array.from({ length: (new Date(calendarYear, calendarMonth, 1).getDay() + 6) % 7 }).map((_, i) => (
-                    <div key={`empty-${i}`} className="h-20 sm:h-24 bg-slate-50/40 rounded-xl border border-transparent"></div>
+                    <div key={`empty-${i}`} className="h-16 sm:h-24 bg-slate-50/40 rounded-xl border border-transparent"></div>
                   ))}
 
                   {(() => {
@@ -2758,7 +3366,6 @@ export default function App() {
                       date.setDate(date.getDate() + 1);
                     }
 
-                    // Map all approved and pending holidays
                     const holidayMap = {};
                     requests.forEach((req) => {
                       if (req.type === 'Time Off / Holiday' && (req.status === 'approved' || req.status === 'pending')) {
@@ -2774,7 +3381,10 @@ export default function App() {
                     });
 
                     return days.map((dateObj) => {
-                      const dateStr = dateObj.toISOString().split('T')[0];
+                      const y = dateObj.getFullYear();
+                      const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+                      const d = String(dateObj.getDate()).padStart(2, '0');
+                      const dateStr = `${y}-${m}-${d}`;
                       const dayHolidays = holidayMap[dateStr] || [];
                       const isBlackedOut = Boolean(blackoutDates[dateStr]);
                       const isSelected = selectedCalendarDay === dateStr;
@@ -2787,9 +3397,11 @@ export default function App() {
                               handleToggleBlackoutDate(dateStr);
                             } else {
                               setSelectedCalendarDay(dateStr);
+                              if (!reqStartDate) setReqStartDate(dateStr);
+                              else if (!reqEndDate && dateStr >= reqStartDate) setReqEndDate(dateStr);
                             }
                           }}
-                          className={`h-20 sm:h-24 p-1.5 rounded-xl border flex flex-col justify-between cursor-pointer transition-all overflow-hidden ${
+                          className={`h-16 sm:h-24 p-1 sm:p-1.5 rounded-xl border flex flex-col justify-between cursor-pointer transition-all overflow-hidden ${
                             isBlackedOut
                               ? 'bg-slate-900 text-white border-slate-900'
                               : isSelected
@@ -2797,23 +3409,22 @@ export default function App() {
                               : 'bg-white hover:bg-slate-50 border-slate-200'
                           }`}>
                           <div className="flex items-center justify-between">
-                            <span className={`text-xs font-bold ${isBlackedOut ? 'text-white' : 'text-slate-800'}`}>
+                            <span className={`text-[11px] sm:text-xs font-bold ${isBlackedOut ? 'text-white' : 'text-slate-800'}`}>
                               {dateObj.getDate()}
                             </span>
-                            {isBlackedOut && <span className="text-[9px] bg-rose-600 text-white px-1 rounded">Embargo</span>}
+                            {isBlackedOut && <span className="text-[8px] bg-rose-600 text-white px-1 rounded">Block</span>}
                           </div>
 
-                          <div className="space-y-1 overflow-y-auto max-h-12 sm:max-h-14">
+                          <div className="space-y-0.5 overflow-y-auto max-h-10 sm:max-h-14">
                             {dayHolidays.map((h, idx) => (
                               <div
                                 key={idx}
-                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold truncate flex items-center justify-between ${
+                                className={`px-1 py-0.5 rounded text-[8px] sm:text-[9px] font-bold truncate ${
                                   h.status === 'approved'
                                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                                     : 'bg-amber-100 text-amber-900 border border-amber-200'
                                 }`}>
-                                <span className="truncate">{h.name}</span>
-                                <span className="text-[8px] opacity-75">{h.status === 'approved' ? '✓' : '…'}</span>
+                                {h.name}
                               </div>
                             ))}
                           </div>
@@ -2829,8 +3440,16 @@ export default function App() {
                     <div>
                       <span className="font-bold text-indigo-900">Selected Date: {selectedCalendarDay}</span>
                       <p className="text-slate-600 mt-0.5">
-                        {blackoutDates[selectedCalendarDay] ? '⚠️ Management Blackout Active' : ''}
-                        {(!blackoutDates[selectedCalendarDay] && (!requests.some(r => getDatesInRange(r.startDate || r.dates, r.endDate || r.startDate || r.dates).includes(selectedCalendarDay) && (r.status === 'approved' || r.status === 'pending')))) ? ' No staff off on this day.' : ''}
+                        {blackoutDates[selectedCalendarDay] ? 'Management Blackout Active. ' : ''}
+                        {requests
+                          .filter(
+                            (r) =>
+                              r.type === 'Time Off / Holiday' &&
+                              (r.status === 'approved' || r.status === 'pending') &&
+                              getDatesInRange(r.startDate || r.dates, r.endDate || r.startDate || r.dates).includes(selectedCalendarDay)
+                          )
+                          .map((r) => `${r.requesterName} (${r.status})`)
+                          .join(', ') || (!blackoutDates[selectedCalendarDay] ? 'No staff booked off on this day.' : '')}
                       </p>
                     </div>
                     <button
@@ -2851,7 +3470,11 @@ export default function App() {
                     <div key={r.id} className="p-4 rounded-xl border border-slate-200 space-y-2 bg-slate-50">
                       <div className="flex items-center justify-between text-xs">
                         <span className="font-bold text-indigo-600">{r.requesterName} • {r.type} {r.dates ? `(${r.dates})` : ''}</span>
-                        <span className="font-bold uppercase">{r.status}</span>
+                        <span className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] ${
+                          r.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : r.status === 'declined' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-900'
+                        }`}>
+                          {r.status}
+                        </span>
                       </div>
                       <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border">{r.note}</p>
                       {isSupervisor && r.status === 'pending' && (
@@ -2875,10 +3498,10 @@ export default function App() {
           </div>
         )}
 
-        {/* ================= USER MANAGEMENT TAB ================= */}
+        {/* ================= USER MANAGEMENT TAB (WITH CONTRACTED DAYS & STANDING TASKS) ================= */}
         {activeTab === 'users' && isManager && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-4">
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-5">
               <h2 className="font-bold text-slate-900 text-base">Add Team Member</h2>
               <form onSubmit={handleAddUser} className="space-y-4">
                 <input
@@ -2886,7 +3509,7 @@ export default function App() {
                   required
                   value={newUserName}
                   onChange={(e) => setNewUserName(e.target.value)}
-                  placeholder="Full Name"
+                  placeholder="Full Name (e.g. Paul)"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
                 />
                 <select value={newUserRole} onChange={(e) => setNewUserRole(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white">
@@ -2902,45 +3525,223 @@ export default function App() {
                   placeholder="Initial PIN (1234)"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
                 />
-                <button type="submit" className="w-full py-3 bg-indigo-600 text-white font-semibold rounded-xl text-sm">
+
+                {/* Quick-Select Contracted Days */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 uppercase">Contracted Shift Days</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {WEEK_DAYS.map((day) => {
+                      const active = newUserDays.includes(day);
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => toggleDayInList(day, newUserDays, setNewUserDays)}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                            active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-50 text-slate-600 border-slate-200'
+                          }`}>
+                          {day}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Standing Shift Routine Tasks */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600 uppercase">
+                    Auto-Send Standing Tasks on Shift Days
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {TASK_PRESETS.filter((p) => p.id !== 'custom').map((preset) => {
+                      const active = newUserPresets.includes(preset.id);
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => togglePresetInList(preset.id, newUserPresets, setNewUserPresets)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
+                            active ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 text-slate-600 border-slate-200'
+                          }`}>
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <button type="submit" className="w-full py-3 bg-indigo-600 text-white font-semibold rounded-xl text-sm shadow-md">
                   Create Account
                 </button>
               </form>
             </div>
 
             <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
-              <h2 className="font-bold text-slate-900 text-base">Current Team Roster ({teamUsers.length})</h2>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                <div>
+                  <h2 className="font-bold text-slate-900 text-base">Current Team Roster ({teamUsers.length})</h2>
+                  <p className="text-xs text-slate-500">Tap Edit on any colleague to set their contracted days and automatic daily tasks</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRunDailyStandingTasks(true)}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-semibold flex items-center space-x-1.5 w-fit">
+                  <Sparkles className="w-3.5 h-3.5"/>
+                  <span>Drop Today's ({todayDayCode}) Shift Tasks Now</span>
+                </button>
+              </div>
+
               <div className="divide-y divide-slate-100">
-                {teamUsers.map((u) => (
-                  <div key={u.id} className="py-3 flex items-center justify-between gap-3">
-                    {editingUserId === u.id ? (
-                      <div className="flex-1 flex flex-wrap gap-2 bg-indigo-50 p-3 rounded-xl">
-                        <input type="text" value={editUserName} onChange={(e) => setEditUserName(e.target.value)} className="px-2.5 py-1 rounded border text-xs bg-white"/>
-                        <select value={editUserRole} onChange={(e) => setEditUserRole(e.target.value)} className="px-2.5 py-1 rounded border text-xs bg-white">
-                          <option value="colleague">Colleague</option>
-                          <option value="team_leader">Team Leader</option>
-                          <option value="manager">Manager</option>
-                        </select>
-                        <input type="text" value={editUserPin} onChange={(e) => setEditUserPin(e.target.value)} className="w-20 px-2.5 py-1 rounded border text-xs bg-white"/>
-                        <button onClick={() => handleSaveEditUser(u.id)} className="px-3 py-1 bg-emerald-600 text-white rounded text-xs font-semibold">Save</button>
-                        <button onClick={() => setEditingUserId(null)} className="px-2.5 py-1 bg-slate-200 rounded text-xs">Cancel</button>
-                      </div>
-                    ) : (
-                      <>
-                        <div>
-                          <p className="font-bold text-sm text-slate-800">{u.name}</p>
-                          <p className="text-xs text-slate-500 capitalize">{u.role.replace('_', ' ')} • PIN: {u.pin || '1234'}</p>
+                {teamUsers.map((u) => {
+                  const userDays = Array.isArray(u.contractedDays) ? u.contractedDays : [];
+                  const userPresets = Array.isArray(u.defaultPresets) ? u.defaultPresets : [];
+
+                  return (
+                    <div key={u.id} className="py-4 flex flex-col gap-3">
+                      {editingUserId === u.id ? (
+                        <div className="bg-indigo-50/70 p-4 rounded-2xl border border-indigo-200 space-y-4">
+                          <div className="flex flex-wrap gap-2">
+                            <input
+                              type="text"
+                              value={editUserName}
+                              onChange={(e) => setEditUserName(e.target.value)}
+                              className="px-3 py-1.5 rounded-xl border text-xs bg-white font-semibold"
+                              placeholder="Name"
+                            />
+                            <select
+                              value={editUserRole}
+                              onChange={(e) => setEditUserRole(e.target.value)}
+                              className="px-3 py-1.5 rounded-xl border text-xs bg-white font-semibold">
+                              <option value="colleague">Colleague</option>
+                              <option value="team_leader">Team Leader</option>
+                              <option value="manager">Manager</option>
+                            </select>
+                            <input
+                              type="text"
+                              value={editUserPin}
+                              onChange={(e) => setEditUserPin(e.target.value)}
+                              className="w-24 px-3 py-1.5 rounded-xl border text-xs bg-white font-semibold"
+                              placeholder="PIN"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <span className="text-[11px] font-bold uppercase text-indigo-900 block">Contracted Shift Days:</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {WEEK_DAYS.map((day) => {
+                                const active = editUserDays.includes(day);
+                                return (
+                                  <button
+                                    key={day}
+                                    type="button"
+                                    onClick={() => toggleDayInList(day, editUserDays, setEditUserDays)}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${
+                                      active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'
+                                    }`}>
+                                    {day}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <span className="text-[11px] font-bold uppercase text-indigo-900 block">
+                              Standing Shift Tasks (Sent Automatically on Contracted Days):
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {TASK_PRESETS.filter((p) => p.id !== 'custom').map((preset) => {
+                                const active = editUserPresets.includes(preset.id);
+                                return (
+                                  <button
+                                    key={preset.id}
+                                    type="button"
+                                    onClick={() => togglePresetInList(preset.id, editUserPresets, setEditUserPresets)}
+                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${
+                                      active ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-200'
+                                    }`}>
+                                    {preset.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div className="flex justify-end space-x-2">
+                            <button
+                              type="button"
+                              onClick={() => setEditingUserId(null)}
+                              className="px-3 py-1.5 bg-white border rounded-xl text-xs font-semibold">
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditUser(u.id)}
+                              className="px-4 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-semibold">
+                              Save Changes
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <button onClick={() => startEditUser(u)} className="px-3 py-1 text-xs font-semibold text-indigo-600 bg-indigo-50 rounded-lg">Edit / PIN</button>
-                          {u.id !== currentUser.id && (
-                            <button onClick={() => handleDeleteUser(u)} className="p-1.5 text-rose-600"><Trash2 className="w-4 h-4"/></button>
-                          )}
+                      ) : (
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="space-y-1">
+                            <div className="flex items-center space-x-2">
+                              <p className="font-bold text-sm text-slate-800">{u.name}</p>
+                              <span className="text-xs text-slate-500 capitalize">
+                                {(u.role || '').replace('_', ' ')} • PIN: {u.pin || '1234'}
+                              </span>
+                              {isUserOnShiftToday(u) && (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                                  On Shift Today
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[11px] text-slate-400 font-semibold">Days:</span>
+                              {userDays.length === 0 ? (
+                                <span className="text-[11px] text-slate-400 italic">Not set</span>
+                              ) : (
+                                userDays.map((d) => (
+                                  <span key={d} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-bold">
+                                    {d}
+                                  </span>
+                                ))
+                              )}
+
+                              {userPresets.length > 0 && (
+                                <>
+                                  <span className="text-[11px] text-slate-400 font-semibold ml-2">Standing Tasks:</span>
+                                  {userPresets.map((pid) => {
+                                    const found = TASK_PRESETS.find((p) => p.id === pid);
+                                    return found ? (
+                                      <span key={pid} className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded text-[10px] font-bold">
+                                        {found.label}
+                                      </span>
+                                    ) : null;
+                                  })}
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-2 self-start sm:self-center">
+                            <button
+                              onClick={() => startEditUser(u)}
+                              className="px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl">
+                              Edit Shift & Tasks
+                            </button>
+                            {u.id !== currentUser.id && (
+                              <button onClick={() => handleDeleteUser(u)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg">
+                                <Trash2 className="w-4 h-4"/>
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </>
-                    )}
-                  </div>
-                ))}
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
