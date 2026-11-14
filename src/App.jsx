@@ -79,68 +79,78 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December"
 ];
 
-// Standard Repetitive Task Presets & Expectations
-const TASK_PRESETS = [
-  { id: 'custom', label: 'Custom (Type Your Own)', title: '', description: '' },
+// Default Built-In Task Presets & Expectations
+const DEFAULT_TASK_PRESETS = [
+  { id: 'custom', label: 'Custom (Type Your Own)', title: '', description: '', isBuiltIn: true },
   {
     id: 'warehouse',
     label: 'Warehouse',
     title: 'Warehouse',
-    description: 'Maintain warehouse organisation, tip incoming deliveries safely, condense pallets and cages, keep walkways and fire exits clear, and upload photos of the cleared warehouse floor.'
+    description: 'Maintain warehouse organisation, tip incoming deliveries safely, condense pallets and cages, keep walkways and fire exits clear, and upload photos of the cleared warehouse floor.',
+    isBuiltIn: true
   },
   {
     id: 'finalising_deliveries',
     label: 'Finalising Deliveries',
     title: 'Finalising Deliveries',
-    description: 'Verify all incoming deliveries are finalised on the system, check off paperwork/ASN discrepancies, and upload a photo of the finalised delivery screen or paperwork.'
+    description: 'Verify all incoming deliveries are finalised on the system, check off paperwork/ASN discrepancies, and upload a photo of the finalised delivery screen or paperwork.',
+    isBuiltIn: true
   },
   {
     id: 'waste',
     label: 'Waste',
     title: 'Waste',
-    description: 'Process all damages, splits, and out-of-date stock. Scan everything accurately, clear the waste cages/area, and upload a photo of the cleared area.'
+    description: 'Process all damages, splits, and out-of-date stock. Scan everything accurately, clear the waste cages/area, and upload a photo of the cleared area.',
+    isBuiltIn: true
   },
   {
     id: 'drop_tops',
     label: 'Drop Tops',
     title: 'Drop Tops',
-    description: 'Pull down top-stock across the assigned aisles to fill shelf gaps, face up as you go, update any capacity issues, and upload a photo of the completed bays.'
+    description: 'Pull down top-stock across the assigned aisles to fill shelf gaps, face up as you go, update any capacity issues, and upload a photo of the completed bays.',
+    isBuiltIn: true
   },
   {
     id: 'gifting',
     label: 'Gifting',
     title: 'Gifting',
-    description: 'Replenish and dress the seasonal/gifting bays, ensure all price labels are present and aligned, remove empty cardboard, and upload a photo of the finished display.'
+    description: 'Replenish and dress the seasonal/gifting bays, ensure all price labels are present and aligned, remove empty cardboard, and upload a photo of the finished display.',
+    isBuiltIn: true
   },
   {
     id: 'hb',
     label: 'H&B',
     title: 'H&B',
-    description: 'Work Health & Beauty delivery/backstock, check security tags on high-value lines, face up shelves, and upload a photo of completed bays.'
+    description: 'Work Health & Beauty delivery/backstock, check security tags on high-value lines, face up shelves, and upload a photo of completed bays.',
+    isBuiltIn: true
   },
   {
     id: 'horseshoe',
     label: 'Horseshoe',
     title: 'Horseshoe',
-    description: 'Work and replenish the Horseshoe area, keep promotional lines topped up and faced, clear all rubbish, and upload a photo of the finished section.'
+    description: 'Work and replenish the Horseshoe area, keep promotional lines topped up and faced, clear all rubbish, and upload a photo of the finished section.',
+    isBuiltIn: true
   },
   {
     id: 'modular_compliance',
     label: 'Modular Compliance',
     title: 'Modular Compliance',
-    description: 'Relay/check bays against the current modular plan, ensure all SELs/ESLs are aligned to the left edge and match product facings, and upload a clear photo of the bay.'
+    description: 'Relay/check bays against the current modular plan, ensure all SELs/ESLs are aligned to the left edge and match product facings, and upload a clear photo of the bay.',
+    isBuiltIn: true
   },
   {
     id: 'camera_tasks',
     label: 'Camera Tasks',
     title: 'Camera Tasks',
-    description: 'Action the latest overhead camera gap/stock alerts, replenish or zero-check flagged lines, and upload a photo of the resolved bays.'
+    description: 'Action the latest overhead camera gap/stock alerts, replenish or zero-check flagged lines, and upload a photo of the resolved bays.',
+    isBuiltIn: true
   },
   {
     id: 'promo',
     label: 'Promo',
     title: 'Promo',
-    description: 'Replenish promotional end-caps and features, verify correct promotional barkers/POS are displayed, face up stock, and upload a photo of the end-cap.'
+    description: 'Replenish promotional end-caps and features, verify correct promotional barkers/POS are displayed, face up stock, and upload a photo of the end-cap.',
+    isBuiltIn: true
   }
 ];
 
@@ -153,7 +163,7 @@ const PAUSE_REASONS = [
 ];
 
 const DEFAULT_USERS = [
-  { id: 'mgr-1', name: 'Lee (Manager)', role: 'manager', pin: '1234', color: 'bg-indigo-600', fcmTokens: [], contractedDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], defaultPresets: [] },
+  { id: 'mgr-1', name: 'Lee (Grocery Manager)', role: 'manager', pin: '1234', color: 'bg-indigo-600', fcmTokens: [], contractedDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], defaultPresets: [] },
   { id: 'tl-1', name: 'Team Leader 1', role: 'team_leader', pin: '1234', color: 'bg-violet-600', fcmTokens: [], contractedDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], defaultPresets: [] },
   { id: 'tl-2', name: 'Team Leader 2', role: 'team_leader', pin: '1234', color: 'bg-purple-600', fcmTokens: [], contractedDays: ['Wed', 'Thu', 'Fri', 'Sat', 'Sun'], defaultPresets: [] },
   { id: 'col-1', name: 'Colleague 1', role: 'colleague', pin: '1234', color: 'bg-blue-600', fcmTokens: [], contractedDays: [], defaultPresets: [] },
@@ -391,6 +401,16 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('tasks');
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
 
+  // Custom Presets & Standing Tasks Tab State (Manager Only)
+  const [customPresets, setCustomPresets] = useState([]);
+  const [newPresetLabel, setNewPresetLabel] = useState('');
+  const [newPresetTitle, setNewPresetTitle] = useState('');
+  const [newPresetDesc, setNewPresetDesc] = useState('');
+  const [editingPresetId, setEditingPresetId] = useState(null);
+
+  // Combined Quick-Select Presets (Built-in + Custom Manager Presets)
+  const allTaskPresets = [...DEFAULT_TASK_PRESETS, ...customPresets];
+
   // Performance Review Tab Filters (Manager Only)
   const [perfFilterUserId, setPerfFilterUserId] = useState('all');
   const [perfFilterView, setPerfFilterView] = useState('all_issues');
@@ -410,16 +430,19 @@ export default function App() {
   const [selectedSeasonalDate, setSelectedSeasonalDate] = useState(getTodayIsoDate());
   const [seasonalMinStart, setSeasonalMinStart] = useState('06:00');
   const [seasonalMaxFinish, setSeasonalMaxFinish] = useState('22:00');
-  const [seasonalStatus, setSeasonalStatus] = useState('available'); // 'available' | 'unavailable'
+  const [seasonalStatus, setSeasonalStatus] = useState('available');
   const [seasonalNote, setSeasonalNote] = useState('');
   const [seasonalFilterUserId, setSeasonalFilterUserId] = useState('all');
 
-  // Request Form State
+  // Request & Manual Holiday Submission Form State
+  const [reqTargetUserId, setReqTargetUserId] = useState('');
+  const [reqAutoApprove, setReqAutoApprove] = useState(true);
   const [reqType, setReqType] = useState('Time Off / Holiday');
   const [reqStartDate, setReqStartDate] = useState('');
   const [reqEndDate, setReqEndDate] = useState('');
   const [reqNote, setReqNote] = useState('');
   const [managerReplyInputs, setManagerReplyInputs] = useState({});
+  const [requestsListOpen, setRequestsListOpen] = useState(false); // Collapsible All Team Requests Card
 
   // Collapsible Accordion States for Supervisor Board
   const [openSections, setOpenSections] = useState({
@@ -490,6 +513,7 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser) return;
+    setReqTargetUserId(currentUser.id);
     try {
       const raw = localStorage.getItem(`taskflow_terminal_qr_${currentUser.id}`);
       if (raw) {
@@ -510,7 +534,6 @@ export default function App() {
     }
   }, [currentUser?.id]);
 
-  // Populate Seasonal Availability Form when user taps a date on the Seasonal Calendar
   useEffect(() => {
     if (!currentUser || !selectedSeasonalDate) return;
     const existing = seasonalList.find(
@@ -565,7 +588,7 @@ export default function App() {
 
   const handleSelectPreset = (presetId) => {
     setSelectedPreset(presetId);
-    const found = TASK_PRESETS.find((p) => p.id === presetId);
+    const found = allTaskPresets.find((p) => p.id === presetId);
     if (found) {
       setTaskTitle(found.title);
       setTaskDesc(found.description);
@@ -580,7 +603,7 @@ export default function App() {
         if (!supported) return;
         const messaging = getMessaging(app);
         unsubFCM = onMessage(messaging, (payload) => {
-          const title = payload.notification?.title || 'TaskFlow Alert';
+          const title = payload.notification?.title || 'Grocery Task Manager';
           const body = payload.notification?.body || '';
           showToast(title, body);
         });
@@ -667,9 +690,19 @@ export default function App() {
       }
     });
 
+    const customPresetsRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'customPresets');
+    const unsubCustomPresets = onSnapshot(customPresetsRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setCustomPresets(docSnap.data().list || []);
+      } else {
+        setCustomPresets([]);
+      }
+    });
+
     return () => {
       unsubBlackouts();
       unsubAutoDrop();
+      unsubCustomPresets();
     };
   }, [fbUser]);
 
@@ -685,6 +718,81 @@ export default function App() {
     }
     setBlackoutDates(updated);
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', 'blackouts'), { dates: updated }, { merge: true });
+  };
+
+  // Save or Update Custom Quick-Select Task Preset (Manager Only)
+  const handleSaveCustomPreset = async (e) => {
+    e.preventDefault();
+    if (!newPresetLabel.trim() || !newPresetTitle.trim() || !newPresetDesc.trim()) return;
+
+    let updatedList = [...customPresets];
+    if (editingPresetId) {
+      updatedList = updatedList.map((p) =>
+        p.id === editingPresetId
+          ? {
+              ...p,
+              label: newPresetLabel.trim(),
+              title: newPresetTitle.trim(),
+              description: newPresetDesc.trim()
+            }
+          : p
+      );
+    } else {
+      const newPreset = {
+        id: `custom_${Date.now()}`,
+        label: newPresetLabel.trim(),
+        title: newPresetTitle.trim(),
+        description: newPresetDesc.trim(),
+        isBuiltIn: false
+      };
+      updatedList.push(newPreset);
+    }
+
+    await setDoc(
+      doc(db, 'artifacts', appId, 'public', 'data', 'config', 'customPresets'),
+      { list: updatedList },
+      { merge: true }
+    );
+
+    setNewPresetLabel('');
+    setNewPresetTitle('');
+    setNewPresetDesc('');
+    setEditingPresetId(null);
+    showToast("Quick-Select Saved", "Your custom preset is now live across the app.");
+  };
+
+  const handleDeleteCustomPreset = async (presetId) => {
+    const updatedList = customPresets.filter((p) => p.id !== presetId);
+    await setDoc(
+      doc(db, 'artifacts', appId, 'public', 'data', 'config', 'customPresets'),
+      { list: updatedList },
+      { merge: true }
+    );
+    showToast("Preset Deleted", "Removed custom quick-select preset.");
+  };
+
+  // Toggle a colleague's standing task preset directly from the Standing Tasks tab
+  const handleQuickToggleUserStandingPreset = async (userObj, presetId) => {
+    const currentList = Array.isArray(userObj.defaultPresets) ? userObj.defaultPresets : [];
+    const updatedList = currentList.includes(presetId)
+      ? currentList.filter((id) => id !== presetId)
+      : [...currentList, presetId];
+
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', userObj.id), {
+      defaultPresets: updatedList
+    });
+  };
+
+  // Toggle a colleague's contracted shift day directly from the Standing Tasks tab
+  const handleQuickToggleUserContractedDay = async (userObj, dayCode) => {
+    const currentDays = Array.isArray(userObj.contractedDays) ? userObj.contractedDays : [];
+    const updatedDays = currentDays.includes(dayCode)
+      ? currentDays.filter((d) => d !== dayCode)
+      : [...currentDays, dayCode];
+
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'users', userObj.id), {
+      contractedDays: updatedDays
+    });
   };
 
   useEffect(() => {
@@ -940,7 +1048,7 @@ export default function App() {
         if (isUserOnApprovedHoliday(u.id, todayIso)) continue;
 
         for (const presetId of userPresets) {
-          const presetObj = TASK_PRESETS.find((p) => p.id === presetId);
+          const presetObj = allTaskPresets.find((p) => p.id === presetId);
           if (!presetObj || !presetObj.title) continue;
 
           const alreadyExistsToday = tasks.some(
@@ -1020,7 +1128,7 @@ export default function App() {
     if (lastAutoDropDate !== todayIso) {
       handleRunDailyStandingTasks(false);
     }
-  }, [fbUser, currentUser?.id, teamUsers.length, lastAutoDropDate]);
+  }, [fbUser, currentUser?.id, teamUsers.length, lastAutoDropDate, customPresets.length]);
 
   const handleLoginSubmit = (e) => {
     e.preventDefault();
@@ -1615,12 +1723,17 @@ export default function App() {
     }
   };
 
+  // Supports Colleague self-submission AND Manager/Team Leader manual submission on behalf of a colleague
   const handleCreateRequest = async (e) => {
     e.preventDefault();
     if (!reqStartDate || !reqNote.trim()) {
       showToast("Missing Info", "Please provide a start date and details.");
       return;
     }
+
+    const targetId = isSupervisor && reqTargetUserId ? reqTargetUserId : currentUser.id;
+    const targetUserObj = teamUsers.find((u) => u.id === targetId) || currentUser;
+    const isBehalfOfColleague = targetUserObj.id !== currentUser.id;
 
     const requestedDates = getDatesInRange(reqStartDate, reqEndDate || reqStartDate);
     const hasBlackout = requestedDates.some((dStr) => blackoutDates[dStr]);
@@ -1629,24 +1742,43 @@ export default function App() {
       return;
     }
 
+    const finalStatus = isSupervisor && reqAutoApprove ? 'approved' : 'pending';
+
     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'requests'), {
-      requesterId: currentUser.id,
-      requesterName: currentUser.name,
+      requesterId: targetUserObj.id,
+      requesterName: targetUserObj.name,
+      submittedById: currentUser.id,
+      submittedByName: currentUser.name,
       type: reqType,
       startDate: reqStartDate,
       endDate: reqEndDate || reqStartDate,
       dates: reqEndDate && reqEndDate !== reqStartDate ? `${reqStartDate} to ${reqEndDate}` : reqStartDate,
       note: reqNote.trim(),
-      status: 'pending',
-      managerReply: '',
-      reviewedBy: null,
+      status: finalStatus,
+      managerReply: finalStatus === 'approved' ? `Logged & approved by ${currentUser.name}` : '',
+      reviewedBy: finalStatus === 'approved' ? currentUser.name : null,
+      reviewedAt: finalStatus === 'approved' ? new Date().toISOString() : null,
       createdAt: new Date().toISOString()
     });
-    await sendNotification(null, 'supervisors', 'New Manager Request', `${currentUser.name} submitted a ${reqType} request.`);
+
+    if (isBehalfOfColleague) {
+      await sendNotification(
+        targetUserObj.id,
+        null,
+        `Holiday / Request Logged (${finalStatus.toUpperCase()})`,
+        `${currentUser.name} logged a ${reqType} (${reqStartDate}${reqEndDate ? ` to ${reqEndDate}` : ''}) on your calendar.`
+      );
+    } else {
+      await sendNotification(null, 'supervisors', 'New Team Request', `${currentUser.name} submitted a ${reqType} request.`);
+    }
+
     setReqStartDate('');
     setReqEndDate('');
     setReqNote('');
-    showToast("Request Sent", "Your request and calendar block have been sent to management.");
+    showToast(
+      finalStatus === 'approved' ? "Holiday Logged & Approved" : "Request Sent",
+      `Added to calendar for ${targetUserObj.name}.`
+    );
   };
 
   const handleDecisionRequest = async (req, newStatus) => {
@@ -1659,6 +1791,26 @@ export default function App() {
     });
     await sendNotification(req.requesterId, null, `Request ${newStatus === 'approved' ? 'Approved' : 'Declined'}`, `${currentUser.name} ${newStatus} your ${req.type} request.`);
     showToast("Request Updated", `Marked as ${newStatus}.`);
+  };
+
+  const handleDeleteSingleRequest = async (reqId) => {
+    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'requests', reqId));
+    showToast("Request Removed", "Deleted request entry.");
+  };
+
+  const handleClearDecidedRequests = async () => {
+    const decided = requests.filter((r) => r.status === 'approved' || r.status === 'declined');
+    for (const r of decided) {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'requests', r.id));
+    }
+    showToast("Decided Requests Cleared", `Cleared ${decided.length} processed request(s).`);
+  };
+
+  const handleClearAllRequests = async () => {
+    for (const r of requests) {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'requests', r.id));
+    }
+    showToast("All Requests Cleared", "All requests have been removed.");
   };
 
   const handleAddUser = async (e) => {
@@ -1733,7 +1885,7 @@ export default function App() {
   if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">
-        <span className="text-sm font-medium">Loading TaskFlow Pro...</span>
+        <span className="text-sm font-medium">Loading Grocery Task Manager...</span>
       </div>
     );
   }
@@ -1747,14 +1899,14 @@ export default function App() {
     const colleagues = teamUsers.filter((u) => u.role === 'colleague');
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4 overflow-x-hidden">
         <div className="max-w-2xl w-full bg-white/10 backdrop-blur-xl border border-white/10 p-6 sm:p-8 rounded-3xl shadow-2xl text-white space-y-6">
           <div className="text-center space-y-2">
             <div className="w-14 h-14 bg-gradient-to-tr from-indigo-500 to-violet-500 rounded-2xl mx-auto flex items-center justify-center shadow-lg">
               <Layers className="w-7 h-7 text-white"/>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight">Grocery Team Portal</h1>
-            <p className="text-xs text-indigo-200">Select your name below to log into your private workspace</p>
+            <h1 className="text-2xl font-bold tracking-tight">Grocery Task Manager</h1>
+            <p className="text-xs text-indigo-200">Select your name below to log into your Grocery workspace</p>
           </div>
 
           {loginTarget && (
@@ -1766,7 +1918,9 @@ export default function App() {
                   </div>
                   <div>
                     <h3 className="font-bold text-sm">Log in as {loginTarget.name}</h3>
-                    <p className="text-xs text-indigo-300 capitalize">{(loginTarget.role || 'colleague').replace('_', ' ')}</p>
+                    <p className="text-xs text-indigo-300 capitalize">
+                      {loginTarget.role === 'manager' ? 'Grocery Manager' : (loginTarget.role || 'colleague').replace('_', ' ')}
+                    </p>
                   </div>
                 </div>
                 <button onClick={() => { setLoginTarget(null); setLoginError(''); }} className="text-slate-400 hover:text-white">
@@ -1792,7 +1946,7 @@ export default function App() {
 
           <div className="space-y-5">
             <div className="space-y-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-300 block">Manager</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-300 block">Grocery Manager</span>
               {managers.map((u) => (
                 <button
                   key={u.id}
@@ -1804,7 +1958,7 @@ export default function App() {
                     </div>
                     <div className="text-left">
                       <h3 className="font-bold text-sm">{u.name}</h3>
-                      <p className="text-[11px] text-indigo-200">Grocery Oversight, Validation & User Admin</p>
+                      <p className="text-[11px] text-indigo-200">Grocery Department Oversight, Validation & Team Admin</p>
                     </div>
                   </div>
                   <ArrowRight className="w-4 h-4 text-indigo-200"/>
@@ -1826,7 +1980,7 @@ export default function App() {
                       </div>
                       <div className="truncate">
                         <h4 className="font-bold text-xs truncate">{u.name}</h4>
-                        <p className="text-[10px] text-indigo-200">Supervisor & Task Recipient</p>
+                        <p className="text-[10px] text-indigo-200">Grocery Team Leader</p>
                       </div>
                     </div>
                     <Lock className="w-3.5 h-3.5 text-indigo-300 shrink-0"/>
@@ -1971,8 +2125,8 @@ export default function App() {
     const selectedUserObj =
       perfFilterUserId === 'all' ? null : teamUsers.find((u) => u.id === perfFilterUserId);
     const headerTitle = selectedUserObj
-      ? `PERFORMANCE & HANDOVER REVIEW — ${selectedUserObj.name.toUpperCase()}`
-      : `TEAM PERFORMANCE & UNCOMPLETED/HANDOVER SUMMARY`;
+      ? `GROCERY PERFORMANCE & HANDOVER REVIEW — ${selectedUserObj.name.toUpperCase()}`
+      : `GROCERY TEAM PERFORMANCE & UNCOMPLETED/HANDOVER SUMMARY`;
 
     const lines = [
       headerTitle,
@@ -2167,14 +2321,14 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 text-slate-800 flex flex-col font-sans">
       {toast.show && (
-        <div className="fixed bottom-6 right-6 z-50">
+        <div className="fixed bottom-6 right-6 z-50 max-w-[90vw]">
           <div className="bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center space-x-3 border border-slate-800">
-            <Sparkles className="w-5 h-5 text-indigo-400"/>
-            <div>
-              <h4 className="text-xs font-semibold">{toast.title}</h4>
-              <p className="text-xs text-slate-300">{toast.message}</p>
+            <Sparkles className="w-5 h-5 text-indigo-400 shrink-0"/>
+            <div className="min-w-0">
+              <h4 className="text-xs font-semibold truncate">{toast.title}</h4>
+              <p className="text-xs text-slate-300 break-words">{toast.message}</p>
             </div>
           </div>
         </div>
@@ -2185,11 +2339,11 @@ export default function App() {
           onClick={() => { setLightboxImage(null); setLightboxTitle(''); }}
           className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 cursor-pointer">
           {lightboxTitle && (
-            <div className="mb-4 px-4 py-1.5 rounded-full bg-white text-slate-900 font-bold text-sm">
+            <div className="mb-4 px-4 py-1.5 rounded-full bg-white text-slate-900 font-bold text-sm text-center">
               {lightboxTitle}
             </div>
           )}
-          <div className="bg-white p-4 rounded-3xl shadow-2xl">
+          <div className="bg-white p-4 rounded-3xl shadow-2xl max-w-full">
             <img src={lightboxImage} alt="Enlarged" className="max-w-full max-h-[80vh] rounded-xl" />
           </div>
           <p className="text-xs text-slate-300 mt-4">Tap anywhere to close</p>
@@ -2429,23 +2583,23 @@ export default function App() {
 
       {/* Top Navigation Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-md">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2">
+          <div className="flex items-center space-x-2.5 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-md shrink-0">
               <Layers className="w-5 h-5"/>
             </div>
-            <div>
-              <h1 className="font-bold text-base text-slate-900 leading-tight">Grocery Task Manager</h1>
-              <p className="text-[11px] text-slate-500 font-medium capitalize">
-                {currentUser.name} • {(currentUser.role || 'colleague').replace('_', ' ')} • {todayDayCode}
+            <div className="min-w-0">
+              <h1 className="font-bold text-sm sm:text-base text-slate-900 leading-tight truncate">Grocery Task Manager</h1>
+              <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium capitalize truncate">
+                {currentUser.name} • {currentUser.role === 'manager' ? 'Grocery Manager' : (currentUser.role || 'colleague').replace('_', ' ')} • {todayDayCode}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
             <button
               onClick={handleEnableLockScreenAlerts}
-              className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1 ${
+              className={`px-2 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1 ${
                 fcmEnabled ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-100 text-amber-900'
               }`}>
               <BellRing className="w-3.5 h-3.5"/>
@@ -2454,7 +2608,7 @@ export default function App() {
 
             <button
               onClick={() => setSoundEnabled(!soundEnabled)}
-              className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1 ${
+              className={`px-2 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1 ${
                 soundEnabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
               }`}>
               {soundEnabled ? <Volume2 className="w-4 h-4"/> : <VolumeX className="w-4 h-4"/>}
@@ -2462,7 +2616,7 @@ export default function App() {
 
             <button
               onClick={() => { setSelfNewPin(currentUser.pin || '1234'); setShowPinModal(true); }}
-              className="px-2.5 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold flex items-center space-x-1">
+              className="px-2 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold flex items-center space-x-1">
               <Lock className="w-3.5 h-3.5 text-indigo-600"/>
               <span className="hidden sm:inline">PIN</span>
             </button>
@@ -2480,7 +2634,7 @@ export default function App() {
               </button>
 
               {showNotifDropdown && (
-                <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-50 space-y-3">
+                <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-50 space-y-3">
                   <div className="flex items-center justify-between border-b pb-2">
                     <span className="font-bold text-xs">Notifications ({myNotifications.length})</span>
                     {myNotifications.length > 0 && (
@@ -2513,7 +2667,7 @@ export default function App() {
               )}
             </div>
 
-            <button onClick={handleLogout} className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-600 text-xs font-semibold flex items-center space-x-1">
+            <button onClick={handleLogout} className="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-600 text-xs font-semibold flex items-center space-x-1">
               <LogOut className="w-3.5 h-3.5"/>
               <span className="hidden sm:inline">Log Out</span>
             </button>
@@ -2521,13 +2675,13 @@ export default function App() {
         </div>
 
         {/* Navigation Tabs */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-2 border-t border-slate-100 py-2 overflow-x-auto">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex space-x-2 border-t border-slate-100 py-2 overflow-x-auto">
           <button
             onClick={() => setActiveTab('tasks')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold shrink-0 ${
               activeTab === 'tasks' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
             }`}>
-            {isSupervisor ? `Team Task Board (Pool: ${openPoolTasks.length})` : 'My Assigned Tasks'}
+            {isSupervisor ? `Task Board (Pool: ${openPoolTasks.length})` : 'My Assigned Tasks'}
           </button>
 
           {currentUser.role === 'team_leader' && (
@@ -2540,6 +2694,18 @@ export default function App() {
             </button>
           )}
 
+          {/* NEW TAB FOR GROCERY MANAGER: STANDING TASKS & QUICK-SELECT PRESETS */}
+          {isManager && (
+            <button
+              onClick={() => setActiveTab('standing_tasks')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 shrink-0 ${
+                activeTab === 'standing_tasks' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+              }`}>
+              <Sparkles className="w-3.5 h-3.5"/>
+              <span>Standing Tasks & Presets</span>
+            </button>
+          )}
+
           {isManager && (
             <button
               onClick={() => setActiveTab('performance')}
@@ -2547,7 +2713,7 @@ export default function App() {
                 activeTab === 'performance' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
               }`}>
               <BarChart3 className="w-3.5 h-3.5"/>
-              <span>Performance & Handover Review</span>
+              <span>Performance Review</span>
             </button>
           )}
 
@@ -2560,7 +2726,6 @@ export default function App() {
             <span>{isSupervisor ? `Holiday & Requests (${pendingRequestsCount})` : 'Holiday & Requests'}</span>
           </button>
 
-          {/* NEW SEPARATE TAB: SEASONAL AVAILABILITY */}
           <button
             onClick={() => setActiveTab('seasonal')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 shrink-0 ${
@@ -2584,14 +2749,14 @@ export default function App() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-6 space-y-8 overflow-x-hidden">
         {/* ================= SUPERVISOR DASHBOARD WITH OPEN POOL & COLLAPSIBLE CARDS ================= */}
         {activeTab === 'tasks' && isSupervisor && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-5 shadow-xs">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 h-fit space-y-5 shadow-xs">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 gap-2">
                 <div className="flex items-center space-x-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
                     <Plus className="w-4 h-4"/>
                   </div>
                   <h2 className="font-bold text-slate-800 text-base">Create / Drop Task</h2>
@@ -2599,7 +2764,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => handleRunDailyStandingTasks(true)}
-                  className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px] flex items-center space-x-1">
+                  className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px] flex items-center space-x-1 shrink-0">
                   <Sparkles className="w-3.5 h-3.5"/>
                   <span>Drop {todayDayCode} Routine</span>
                 </button>
@@ -2633,17 +2798,27 @@ export default function App() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-xs font-semibold text-slate-600 uppercase">Quick Task Preset</label>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-semibold text-slate-600 uppercase">Quick Task Preset</label>
+                    {isManager && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('standing_tasks')}
+                        className="text-[11px] font-semibold text-indigo-600 hover:underline">
+                        + Manage Presets
+                      </button>
+                    )}
+                  </div>
                   <select
                     value={selectedPreset}
                     onChange={(e) => handleSelectPreset(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-slate-50 font-medium">
-                    {TASK_PRESETS.map((preset) => (
+                    {allTaskPresets.map((preset) => (
                       <option key={preset.id} value={preset.id}>{preset.label}</option>
                     ))}
                   </select>
                   <div className="flex flex-wrap gap-1.5 pt-1">
-                    {TASK_PRESETS.filter((p) => p.id !== 'custom').map((preset) => (
+                    {allTaskPresets.filter((p) => p.id !== 'custom').map((preset) => (
                       <button
                         key={preset.id}
                         type="button"
@@ -2875,13 +3050,13 @@ export default function App() {
                   onClick={() => toggleSection('taskPool')}
                   className="w-full p-4 bg-violet-50/90 hover:bg-violet-100/70 flex items-center justify-between text-left transition-all">
                   <div className="flex items-center space-x-3">
-                    <div className="w-9 h-9 rounded-xl bg-violet-600 text-white flex items-center justify-center">
+                    <div className="w-9 h-9 rounded-xl bg-violet-600 text-white flex items-center justify-center shrink-0">
                       <Layers className="w-5 h-5"/>
                     </div>
                     <div>
                       <h3 className="font-bold text-slate-900 text-sm">Weekly / Monthly Open Task Pool — Unclaimed</h3>
                       <p className="text-[11px] text-violet-800">
-                        Visible to Manager & Team Leaders only • Claim for yourself or assign to a colleague by the deadline
+                        Visible to Grocery Manager & Team Leaders only • Claim or assign by the deadline
                       </p>
                     </div>
                   </div>
@@ -2995,7 +3170,7 @@ export default function App() {
                   onClick={() => toggleSection('reassigned')}
                   className="w-full p-4 bg-orange-50/80 hover:bg-orange-100/70 flex items-center justify-between text-left transition-all">
                   <div className="flex items-center space-x-3">
-                    <div className="w-9 h-9 rounded-xl bg-orange-500 text-white flex items-center justify-center">
+                    <div className="w-9 h-9 rounded-xl bg-orange-500 text-white flex items-center justify-center shrink-0">
                       <AlertTriangle className="w-5 h-5"/>
                     </div>
                     <div>
@@ -3028,7 +3203,7 @@ export default function App() {
                   onClick={() => toggleSection('validation')}
                   className="w-full p-4 bg-amber-50/80 hover:bg-amber-100/70 flex items-center justify-between text-left transition-all">
                   <div className="flex items-center space-x-3">
-                    <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
                       <Bell className="w-5 h-5"/>
                     </div>
                     <div>
@@ -3119,7 +3294,7 @@ export default function App() {
                   onClick={() => toggleSection('inProgress')}
                   className="w-full p-4 bg-blue-50/70 hover:bg-blue-100/60 flex items-center justify-between text-left transition-all">
                   <div className="flex items-center space-x-3">
-                    <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center">
+                    <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
                       <Play className="w-4 h-4 fill-current"/>
                     </div>
                     <div>
@@ -3152,7 +3327,7 @@ export default function App() {
                   onClick={() => toggleSection('allocated')}
                   className="w-full p-4 bg-slate-100/80 hover:bg-slate-200/60 flex items-center justify-between text-left transition-all">
                   <div className="flex items-center space-x-3">
-                    <div className="w-9 h-9 rounded-xl bg-slate-700 text-white flex items-center justify-center">
+                    <div className="w-9 h-9 rounded-xl bg-slate-700 text-white flex items-center justify-center shrink-0">
                       <ClipboardList className="w-5 h-5"/>
                     </div>
                     <div>
@@ -3185,12 +3360,12 @@ export default function App() {
                   onClick={() => toggleSection('archive')}
                   className="w-full p-4 bg-emerald-50/70 hover:bg-emerald-100/60 flex items-center justify-between text-left transition-all">
                   <div className="flex items-center space-x-3">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
                       <Archive className="w-5 h-5"/>
                     </div>
                     <div>
                       <h3 className="font-bold text-slate-900 text-sm">Validated & Archived History</h3>
-                      <p className="text-[11px] text-emerald-800">Completed and signed-off department tasks</p>
+                      <p className="text-[11px] text-emerald-800">Completed and signed-off Grocery tasks</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -3254,17 +3429,246 @@ export default function App() {
           </div>
         )}
 
+        {/* ================= NEW TAB: STANDING TASKS & QUICK-SELECT PRESETS (MANAGER ONLY) ================= */}
+        {activeTab === 'standing_tasks' && isManager && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Left Column: Create or Edit Quick-Select Preset */}
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-5 shadow-xs">
+              <div className="flex items-center space-x-3 pb-3 border-b border-slate-100">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                  <Sparkles className="w-5 h-5"/>
+                </div>
+                <div>
+                  <h2 className="font-bold text-slate-900 text-base">
+                    {editingPresetId ? 'Edit Quick-Select Preset' : 'Create Quick-Select Task'}
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    New presets appear in your Quick-Select buttons and Standing Shift Task toggles
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveCustomPreset} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Short Button Label
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newPresetLabel}
+                    onChange={(e) => setNewPresetLabel(e.target.value)}
+                    placeholder="e.g. Beer & Wine / Pet Food / Price Changes"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Full Task Title
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newPresetTitle}
+                    onChange={(e) => setNewPresetTitle(e.target.value)}
+                    placeholder="e.g. Beer, Wine & Spirits Replenishment"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Standard Expectations
+                  </label>
+                  <textarea
+                    rows="4"
+                    required
+                    value={newPresetDesc}
+                    onChange={(e) => setNewPresetDesc(e.target.value)}
+                    placeholder="Describe what needs doing and photo proof expectations..."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  {editingPresetId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingPresetId(null);
+                        setNewPresetLabel('');
+                        setNewPresetTitle('');
+                        setNewPresetDesc('');
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-slate-100 text-xs font-semibold">
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-sm shadow-md">
+                    {editingPresetId ? 'Update Preset' : 'Save New Quick-Select Preset'}
+                  </button>
+                </div>
+              </form>
+
+              {/* List of All Quick-Select Presets */}
+              <div className="pt-4 border-t border-slate-100 space-y-2.5">
+                <span className="text-xs font-bold uppercase text-slate-500 block">
+                  Active Quick-Select Presets ({allTaskPresets.filter((p) => p.id !== 'custom').length})
+                </span>
+                <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
+                  {allTaskPresets
+                    .filter((p) => p.id !== 'custom')
+                    .map((p) => (
+                      <div key={p.id} className="p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-slate-900">{p.label}</span>
+                          {!p.isBuiltIn ? (
+                            <div className="flex items-center space-x-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingPresetId(p.id);
+                                  setNewPresetLabel(p.label);
+                                  setNewPresetTitle(p.title);
+                                  setNewPresetDesc(p.description);
+                                }}
+                                className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded font-semibold text-[10px]">
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCustomPreset(p.id)}
+                                className="p-1 text-rose-600 hover:bg-rose-50 rounded">
+                                <Trash2 className="w-3.5 h-3.5"/>
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 font-medium">Built-in</span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 line-clamp-2">{p.description}</p>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Right 2 Columns: Colleague Standing Shift Tasks Matrix */}
+            <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 space-y-5 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                <div>
+                  <h2 className="font-bold text-slate-900 text-base">Colleague Standing Shift Tasks & Contracted Days</h2>
+                  <p className="text-xs text-slate-500">
+                    Tap any day or task pill below to toggle what each colleague automatically receives when on shift
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRunDailyStandingTasks(true)}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center space-x-1.5 shrink-0 w-fit shadow-xs">
+                  <Sparkles className="w-4 h-4"/>
+                  <span>Drop Today's ({todayDayCode}) Standing Tasks</span>
+                </button>
+              </div>
+
+              <div className="divide-y divide-slate-100">
+                {teamUsers.map((u) => {
+                  const userDays = Array.isArray(u.contractedDays) ? u.contractedDays : [];
+                  const userPresets = Array.isArray(u.defaultPresets) ? u.defaultPresets : [];
+                  const onShift = isUserOnShiftToday(u);
+
+                  return (
+                    <div key={u.id} className="py-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2.5">
+                          <div className={`w-8 h-8 rounded-lg ${u.color || 'bg-indigo-600'} text-white font-bold flex items-center justify-center text-xs`}>
+                            {(u.name || 'U')[0]}
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-sm text-slate-900">{u.name}</h4>
+                            <p className="text-[11px] text-slate-500 capitalize">
+                              {u.role === 'manager' ? 'Grocery Manager' : (u.role || '').replace('_', ' ')}
+                            </p>
+                          </div>
+                        </div>
+                        {onShift && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                            On Shift Today ({todayDayCode})
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                          Contracted Days (Tap to Toggle):
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {WEEK_DAYS.map((day) => {
+                            const active = userDays.includes(day);
+                            return (
+                              <button
+                                key={day}
+                                type="button"
+                                onClick={() => handleQuickToggleUserContractedDay(u, day)}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                                  active
+                                    ? 'bg-indigo-600 text-white border-indigo-600'
+                                    : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                }`}>
+                                {day}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                          Standing Tasks Auto-Sent on Shift Days (Tap to Toggle):
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {allTaskPresets
+                            .filter((p) => p.id !== 'custom')
+                            .map((preset) => {
+                              const active = userPresets.includes(preset.id);
+                              return (
+                                <button
+                                  key={preset.id}
+                                  type="button"
+                                  onClick={() => handleQuickToggleUserStandingPreset(u, preset.id)}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
+                                    active
+                                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                  }`}>
+                                  {preset.label}
+                                </button>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ================= MANAGER PERFORMANCE & HANDOVER REVIEW TAB ================= */}
         {activeTab === 'performance' && isManager && (
           <div className="space-y-6">
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                 <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0">
                     <BarChart3 className="w-5 h-5"/>
                   </div>
                   <div>
-                    <h2 className="font-bold text-slate-900 text-base">Manager Performance & Handover Review</h2>
+                    <h2 className="font-bold text-slate-900 text-base">Grocery Performance & Handover Review</h2>
                     <p className="text-xs text-slate-500">
                       Tracks uncompleted jobs, Open Pool deadlines, and shift handovers. Routine pauses that the colleague resumes and finishes themselves count as Completed First-Time.
                     </p>
@@ -3562,7 +3966,7 @@ export default function App() {
                                   </span>
                                 )}
                                 {!isInProgress && !isPaused && !isIncomplete && (
-                                  <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[11px] font-semibold">
+                                  <span className="px-2.5 py-0.5 bg-slate-100 text-slate-600 rounded-md text-[11px] font-semibold">
                                     Not Started
                                   </span>
                                 )}
@@ -3572,7 +3976,7 @@ export default function App() {
                                   </span>
                                 )}
                                 {t.handoverFromName && (
-                                  <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded-md text-[11px] font-semibold">
+                                  <span className="px-2.5 py-0.5 bg-orange-100 text-orange-800 rounded-md text-[11px] font-semibold">
                                     Handover from {t.handoverFromName}
                                   </span>
                                 )}
@@ -3690,8 +4094,43 @@ export default function App() {
         {activeTab === 'requests' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-4 shadow-xs">
-              <h2 className="font-bold text-slate-900 text-base">Submit Holiday or Request</h2>
+              <h2 className="font-bold text-slate-900 text-base">
+                {isSupervisor ? 'Submit or Log Colleague Holiday' : 'Submit Holiday or Request'}
+              </h2>
               <form onSubmit={handleCreateRequest} className="space-y-4">
+                {/* Supervisor Manual Holiday Entry Selector */}
+                {isSupervisor && (
+                  <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 space-y-2.5">
+                    <div>
+                      <label className="block text-[11px] font-bold text-indigo-950 uppercase mb-1">
+                        Logging Request / Holiday For:
+                      </label>
+                      <select
+                        value={reqTargetUserId || currentUser.id}
+                        onChange={(e) => setReqTargetUserId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-indigo-300 text-xs bg-white font-bold text-slate-900">
+                        <option value={currentUser.id}>Myself ({currentUser.name})</option>
+                        {teamUsers
+                          .filter((u) => u.id !== currentUser.id)
+                          .map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.name} ({u.role.replace('_', ' ')})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <label className="flex items-center space-x-2 text-xs font-semibold text-indigo-900 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={reqAutoApprove}
+                        onChange={(e) => setReqAutoApprove(e.target.checked)}
+                        className="rounded text-indigo-600"
+                      />
+                      <span>Auto-approve onto calendar immediately</span>
+                    </label>
+                  </div>
+                )}
+
                 <div className="space-y-1">
                   <label className="block text-xs font-semibold text-slate-600 uppercase">Request Type</label>
                   <select
@@ -3747,7 +4186,7 @@ export default function App() {
                     required
                     value={reqNote}
                     onChange={(e) => setReqNote(e.target.value)}
-                    placeholder="Request details..."
+                    placeholder="Holiday or request details..."
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
                   />
                 </div>
@@ -3755,7 +4194,7 @@ export default function App() {
                 <button
                   type="submit"
                   className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-sm shadow-md">
-                  Submit Request & Block Calendar
+                  {isSupervisor && reqAutoApprove ? 'Log & Approve Holiday' : 'Submit Request & Block Calendar'}
                 </button>
               </form>
             </div>
@@ -3764,7 +4203,7 @@ export default function App() {
               <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-xs space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                   <div>
-                    <h3 className="font-bold text-slate-900 text-base">Team Holiday & Availability Calendar</h3>
+                    <h3 className="font-bold text-slate-900 text-base">Grocery Holiday & Availability Calendar</h3>
                     <p className="text-xs text-slate-500">Green = Approved, Amber = Pending, Dark = Blackout</p>
                   </div>
 
@@ -3918,48 +4357,118 @@ export default function App() {
                 )}
               </div>
 
-              <div className="bg-white rounded-2xl p-6 border border-slate-200 space-y-4 shadow-xs">
-                <h2 className="font-bold text-slate-900 text-base">{isSupervisor ? 'All Team Requests' : 'My Requests'}</h2>
-                <div className="space-y-3">
-                  {(isSupervisor ? requests : requests.filter((r) => r.requesterId === currentUser.id)).map((r) => (
-                    <div key={r.id} className="p-4 rounded-xl border border-slate-200 space-y-2 bg-slate-50">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-indigo-600">{r.requesterName} • {r.type} {r.dates ? `(${r.dates})` : ''}</span>
-                        <span className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] ${
-                          r.status === 'approved' ? 'bg-emerald-100 text-emerald-800' : r.status === 'declined' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-900'
-                        }`}>
-                          {r.status}
-                        </span>
+              {/* COLLAPSIBLE ALL TEAM REQUESTS CARD WITH CLEAR OPTIONS */}
+              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setRequestsListOpen(!requestsListOpen)}
+                  className="w-full p-4 bg-slate-100/80 hover:bg-slate-200/60 flex items-center justify-between text-left transition-all">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                      <Calendar className="w-5 h-5"/>
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-sm">
+                        {isSupervisor ? 'All Team Requests (Tap to Open / Clear)' : 'My Submitted Requests'}
+                      </h3>
+                      <p className="text-[11px] text-slate-500">
+                        {pendingRequestsCount} Pending • {requests.length} Total Logged
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {pendingRequestsCount > 0 && (
+                      <span className="px-2.5 py-1 rounded-full bg-amber-200 text-amber-900 font-bold text-xs">
+                        {pendingRequestsCount} Pending
+                      </span>
+                    )}
+                    {requestsListOpen ? <ChevronUp className="w-5 h-5 text-slate-600"/> : <ChevronDown className="w-5 h-5 text-slate-600"/>}
+                  </div>
+                </button>
+
+                {requestsListOpen && (
+                  <div className="p-4 sm:p-6 space-y-4 bg-white">
+                    {isSupervisor && requests.length > 0 && (
+                      <div className="flex flex-wrap items-center justify-end gap-2 pb-2 border-b border-slate-100">
+                        <button
+                          type="button"
+                          onClick={handleClearDecidedRequests}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold">
+                          Clear Decided (Approved/Declined)
+                        </button>
+                        {isManager && (
+                          <button
+                            type="button"
+                            onClick={handleClearAllRequests}
+                            className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-semibold">
+                            Clear All Requests
+                          </button>
+                        )}
                       </div>
-                      <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border">{r.note}</p>
-                      {isSupervisor && r.status === 'pending' && (
-                        <div className="flex gap-2 pt-1">
-                          <input
-                            type="text"
-                            value={managerReplyInputs[r.id] || ''}
-                            onChange={(e) => setManagerReplyInputs((prev) => ({ ...prev, [r.id]: e.target.value }))}
-                            placeholder="Reply note..."
-                            className="flex-1 px-3 py-1.5 rounded-lg border text-xs bg-white"
-                          />
-                          <button onClick={() => handleDecisionRequest(r, 'approved')} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Approve</button>
-                          <button onClick={() => handleDecisionRequest(r, 'declined')} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-semibold">Decline</button>
-                        </div>
+                    )}
+
+                    <div className="space-y-3">
+                      {(isSupervisor ? requests : requests.filter((r) => r.requesterId === currentUser.id)).length === 0 ? (
+                        <p className="text-xs text-slate-400 italic text-center py-4">No requests in the list.</p>
+                      ) : (
+                        (isSupervisor ? requests : requests.filter((r) => r.requesterId === currentUser.id)).map((r) => (
+                          <div key={r.id} className="p-4 rounded-xl border border-slate-200 space-y-2 bg-slate-50">
+                            <div className="flex items-center justify-between gap-2 text-xs">
+                              <span className="font-bold text-indigo-600">
+                                {r.requesterName} • {r.type} {r.dates ? `(${r.dates})` : ''}
+                              </span>
+                              <div className="flex items-center space-x-2">
+                                <span
+                                  className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] ${
+                                    r.status === 'approved'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : r.status === 'declined'
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : 'bg-amber-100 text-amber-900'
+                                  }`}>
+                                  {r.status}
+                                </span>
+                                {(isSupervisor || r.requesterId === currentUser.id) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSingleRequest(r.id)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 rounded">
+                                    <Trash2 className="w-3.5 h-3.5"/>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border">{r.note}</p>
+                            {isSupervisor && r.status === 'pending' && (
+                              <div className="flex flex-wrap gap-2 pt-1">
+                                <input
+                                  type="text"
+                                  value={managerReplyInputs[r.id] || ''}
+                                  onChange={(e) => setManagerReplyInputs((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                                  placeholder="Reply note..."
+                                  className="flex-1 min-w-[140px] px-3 py-1.5 rounded-lg border text-xs bg-white"
+                                />
+                                <button onClick={() => handleDecisionRequest(r, 'approved')} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Approve</button>
+                                <button onClick={() => handleDecisionRequest(r, 'declined')} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-semibold">Decline</button>
+                              </div>
+                            )}
+                          </div>
+                        ))
                       )}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         )}
 
-        {/* ================= NEW SEPARATE TAB: SEASONAL AVAILABILITY CALENDAR ================= */}
+        {/* ================= SEASONAL AVAILABILITY CALENDAR TAB ================= */}
         {activeTab === 'seasonal' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Left Column: Tap-a-Day Availability Input Form */}
             <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-5 shadow-xs">
               <div className="flex items-center space-x-3 pb-3 border-b border-slate-100">
-                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
                   <Clock className="w-5 h-5"/>
                 </div>
                 <div>
@@ -4060,7 +4569,6 @@ export default function App() {
               </form>
             </div>
 
-            {/* Right 2 Columns: Interactive Seasonal Availability Calendar */}
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-xs space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
@@ -4114,12 +4622,10 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 7-Column Weekday Header */}
                 <div className="grid grid-cols-7 gap-1 text-center font-bold text-[10px] sm:text-[11px] text-slate-400 uppercase">
                   {WEEK_DAYS.map((d) => <div key={d} className="py-1">{d}</div>)}
                 </div>
 
-                {/* Seasonal Calendar Grid */}
                 <div className="grid grid-cols-7 gap-1">
                   {Array.from({ length: (new Date(seasonalYear, seasonalMonth, 1).getDay() + 6) % 7 }).map((_, i) => (
                     <div key={`seasonal-empty-${i}`} className="h-20 sm:h-28 bg-slate-50/40 rounded-xl border border-transparent"></div>
@@ -4133,7 +4639,6 @@ export default function App() {
                       date.setDate(date.getDate() + 1);
                     }
 
-                    // Filter visible entries: Supervisors see everyone (or filtered colleague); Colleagues see their own
                     const visibleEntries = seasonalList.filter((entry) => {
                       if (!isSupervisor) return entry.userId === currentUser.id;
                       if (seasonalFilterUserId !== 'all') return entry.userId === seasonalFilterUserId;
@@ -4198,7 +4703,6 @@ export default function App() {
                   })()}
                 </div>
 
-                {/* Selected Date Detailed Breakdown Card */}
                 {selectedSeasonalDate && (
                   <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
                     <div className="flex items-center justify-between">
@@ -4267,7 +4771,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ================= USER MANAGEMENT TAB (WITH CONTRACTED DAYS & STANDING TASKS) ================= */}
+        {/* ================= USER MANAGEMENT TAB ================= */}
         {activeTab === 'users' && isManager && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="bg-white rounded-2xl p-6 border border-slate-200 h-fit space-y-5">
@@ -4284,7 +4788,7 @@ export default function App() {
                 <select value={newUserRole} onChange={(e) => setNewUserRole(e.target.value)} className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white">
                   <option value="colleague">Colleague</option>
                   <option value="team_leader">Team Leader</option>
-                  <option value="manager">Manager</option>
+                  <option value="manager">Grocery Manager</option>
                 </select>
                 <input
                   type="text"
@@ -4320,7 +4824,7 @@ export default function App() {
                     Auto-Send Standing Tasks on Shift Days
                   </label>
                   <div className="flex flex-wrap gap-1.5">
-                    {TASK_PRESETS.filter((p) => p.id !== 'custom').map((preset) => {
+                    {allTaskPresets.filter((p) => p.id !== 'custom').map((preset) => {
                       const active = newUserPresets.includes(preset.id);
                       return (
                         <button
@@ -4346,7 +4850,7 @@ export default function App() {
             <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
                 <div>
-                  <h2 className="font-bold text-slate-900 text-base">Current Team Roster ({teamUsers.length})</h2>
+                  <h2 className="font-bold text-slate-900 text-base">Current Grocery Team Roster ({teamUsers.length})</h2>
                   <p className="text-xs text-slate-500">Tap Edit on any colleague to set their contracted days and automatic daily tasks</p>
                 </div>
                 <button
@@ -4381,7 +4885,7 @@ export default function App() {
                               className="px-3 py-1.5 rounded-xl border text-xs bg-white font-semibold">
                               <option value="colleague">Colleague</option>
                               <option value="team_leader">Team Leader</option>
-                              <option value="manager">Manager</option>
+                              <option value="manager">Grocery Manager</option>
                             </select>
                             <input
                               type="text"
@@ -4417,7 +4921,7 @@ export default function App() {
                               Standing Shift Tasks (Sent Automatically on Contracted Days):
                             </span>
                             <div className="flex flex-wrap gap-1.5">
-                              {TASK_PRESETS.filter((p) => p.id !== 'custom').map((preset) => {
+                              {allTaskPresets.filter((p) => p.id !== 'custom').map((preset) => {
                                 const active = editUserPresets.includes(preset.id);
                                 return (
                                   <button
@@ -4452,10 +4956,10 @@ export default function App() {
                       ) : (
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                           <div className="space-y-1">
-                            <div className="flex items-center space-x-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <p className="font-bold text-sm text-slate-800">{u.name}</p>
                               <span className="text-xs text-slate-500 capitalize">
-                                {(u.role || '').replace('_', ' ')} • PIN: {u.pin || '1234'}
+                                {u.role === 'manager' ? 'Grocery Manager' : (u.role || '').replace('_', ' ')} • PIN: {u.pin || '1234'}
                               </span>
                               {isUserOnShiftToday(u) && (
                                 <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
@@ -4480,7 +4984,7 @@ export default function App() {
                                 <>
                                   <span className="text-[11px] text-slate-400 font-semibold ml-2">Standing Tasks:</span>
                                   {userPresets.map((pid) => {
-                                    const found = TASK_PRESETS.find((p) => p.id === pid);
+                                    const found = allTaskPresets.find((p) => p.id === pid);
                                     return found ? (
                                       <span key={pid} className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded text-[10px] font-bold">
                                         {found.label}
@@ -4514,53 +5018,63 @@ export default function App() {
           </div>
         )}
 
-        {/* ================= TERMINAL LOGIN QR CODES ================= */}
-        <section className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-100">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center">
+        {/* ================= MOBILE-OPTIMISED TERMINAL LOGIN QR CODES (ZERO SIDEWAYS SCROLL) ================= */}
+        <section className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-xs space-y-5 overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+            <div className="flex items-center space-x-3 min-w-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0">
                 <QrCode className="w-5 h-5"/>
               </div>
-              <div>
-                <h2 className="font-bold text-slate-900 text-base">{currentUser.name}'s Terminal Login QR Codes</h2>
-                <p className="text-xs text-slate-500">Saved privately on this phone only. Scan with your Zebra terminal to log in.</p>
+              <div className="min-w-0">
+                <h2 className="font-bold text-slate-900 text-sm sm:text-base truncate">
+                  {currentUser.name}'s Terminal Login QR Codes
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Saved privately on this phone only. Scan with your Zebra terminal to log in.
+                </p>
               </div>
             </div>
             {(savedQrEmail || savedQrPassword) && (
-              <button onClick={handleClearTerminalQr} className="text-xs font-semibold text-rose-600 bg-rose-50 px-3 py-1.5 rounded-xl w-fit">
+              <button
+                onClick={handleClearTerminalQr}
+                className="text-xs font-semibold text-rose-600 bg-rose-50 px-3 py-1.5 rounded-xl w-fit shrink-0">
                 Clear Saved QR Codes
               </button>
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <form onSubmit={handleSaveEmailQr} className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form onSubmit={handleSaveEmailQr} className="space-y-1.5 min-w-0">
               <label className="block text-xs font-semibold text-slate-600 uppercase">Asda Email Address</label>
-              <div className="flex space-x-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   value={qrEmailInput}
                   onChange={(e) => setQrEmailInput(e.target.value)}
                   placeholder="firstname.lastname@asda.co.uk"
-                  className="flex-1 px-3.5 py-2 rounded-xl border border-slate-200 text-sm"
+                  className="w-full min-w-0 flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
                 />
-                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-xl text-xs shrink-0">
+                <button
+                  type="submit"
+                  className="w-full sm:w-auto px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs shrink-0">
                   Save Email QR
                 </button>
               </div>
             </form>
 
-            <form onSubmit={handleSavePasswordQr} className="space-y-2">
+            <form onSubmit={handleSavePasswordQr} className="space-y-1.5 min-w-0">
               <label className="block text-xs font-semibold text-slate-600 uppercase">Terminal Password</label>
-              <div className="flex space-x-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="password"
                   value={qrPasswordInput}
                   onChange={(e) => setQrPasswordInput(e.target.value)}
                   placeholder="Enter terminal password"
-                  className="flex-1 px-3.5 py-2 rounded-xl border border-slate-200 text-sm"
+                  className="w-full min-w-0 flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
                 />
-                <button type="submit" className="px-4 py-2 bg-slate-900 text-white font-semibold rounded-xl text-xs shrink-0">
+                <button
+                  type="submit"
+                  className="w-full sm:w-auto px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl text-xs shrink-0">
                   Save Password QR
                 </button>
               </div>
@@ -4568,24 +5082,24 @@ export default function App() {
           </div>
 
           {(savedQrEmail || savedQrPassword) && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
-              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center text-center space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center text-center space-y-3 min-w-0">
                 <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-800 font-bold text-xs uppercase">Email</span>
                 {savedQrEmail ? (
                   <>
                     <div
                       onClick={() => { setLightboxTitle('Email QR Code'); setLightboxImage(buildQrCodeUrl(savedQrEmail)); }}
-                      className="p-4 bg-white rounded-2xl border-2 border-slate-200 cursor-pointer">
-                      <img src={buildQrCodeUrl(savedQrEmail)} alt="Email QR" className="w-44 h-44 object-contain"/>
+                      className="p-3 bg-white rounded-2xl border-2 border-slate-200 cursor-pointer">
+                      <img src={buildQrCodeUrl(savedQrEmail)} alt="Email QR" className="w-36 h-36 sm:w-44 sm:h-44 object-contain"/>
                     </div>
-                    <p className="text-xs text-slate-500 font-mono truncate max-w-xs">{savedQrEmail}</p>
+                    <p className="text-xs text-slate-500 font-mono truncate w-full px-2">{savedQrEmail}</p>
                   </>
                 ) : (
-                  <p className="text-xs text-slate-400 italic py-12">No Email QR saved yet.</p>
+                  <p className="text-xs text-slate-400 italic py-10">No Email QR saved yet.</p>
                 )}
               </div>
 
-              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center text-center space-y-3">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center text-center space-y-3 min-w-0">
                 <div className="flex items-center space-x-2">
                   <span className="px-3 py-1 rounded-full bg-slate-900 text-white font-bold text-xs uppercase">Password</span>
                   {savedQrPassword && (
@@ -4605,17 +5119,17 @@ export default function App() {
                         if (!revealPasswordQr) setRevealPasswordQr(true);
                         else { setLightboxTitle('Password QR Code'); setLightboxImage(buildQrCodeUrl(savedQrPassword)); }
                       }}
-                      className="p-4 bg-white rounded-2xl border-2 border-slate-200 cursor-pointer relative">
+                      className="p-3 bg-white rounded-2xl border-2 border-slate-200 cursor-pointer relative">
                       <img
                         src={buildQrCodeUrl(savedQrPassword)}
                         alt="Password QR"
-                        className={`w-44 h-44 object-contain ${revealPasswordQr ? '' : 'blur-md'}`}
+                        className={`w-36 h-36 sm:w-44 sm:h-44 object-contain ${revealPasswordQr ? '' : 'blur-md'}`}
                       />
                     </div>
                     <p className="text-xs text-slate-500 font-mono">••••••••••••</p>
                   </>
                 ) : (
-                  <p className="text-xs text-slate-400 italic py-12">No Password QR saved yet.</p>
+                  <p className="text-xs text-slate-400 italic py-10">No Password QR saved yet.</p>
                 )}
               </div>
             </div>
