@@ -1252,7 +1252,7 @@ export default function App() {
   if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">
-        <span className="text-sm font-medium">Loading TaskFlow Pro...</span>
+        <span className="text-sm font-medium">Loading Grocery Task Manager...</span>
       </div>
     );
   }
@@ -1323,7 +1323,7 @@ export default function App() {
                     </div>
                     <div className="text-left">
                       <h3 className="font-bold text-sm">{u.name}</h3>
-                      <p className="text-[11px] text-indigo-200">Full Store Oversight, Validation & User Admin</p>
+                      <p className="text-[11px] text-indigo-200">Grocery Oversight, Validation & User Admin</p>
                     </div>
                   </div>
                   <ArrowRight className="w-4 h-4 text-indigo-200"/>
@@ -1849,7 +1849,7 @@ export default function App() {
               <Layers className="w-5 h-5"/>
             </div>
             <div>
-              <h1 className="font-bold text-base text-slate-900 leading-tight">TaskFlow Pro</h1>
+              <h1 className="font-bold text-base text-slate-900 leading-tight">Grocery Tasks</h1>
               <p className="text-[11px] text-slate-500 font-medium capitalize">
                 {currentUser.name} • {currentUser.role.replace('_', ' ')}
               </p>
