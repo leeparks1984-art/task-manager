@@ -442,7 +442,7 @@ export default function App() {
   const [reqEndDate, setReqEndDate] = useState('');
   const [reqNote, setReqNote] = useState('');
   const [managerReplyInputs, setManagerReplyInputs] = useState({});
-  const [requestsListOpen, setRequestsListOpen] = useState(true); // Collapsible All Team Requests Card
+  const [requestsListOpen, setRequestsListOpen] = useState(false); // Collapsible All Team Requests Card
   const [editingRequestId, setEditingRequestId] = useState(null);
   const [editReqTargetUserId, setEditReqTargetUserId] = useState('');
   const [editReqType, setEditReqType] = useState('Time Off / Holiday');
@@ -451,12 +451,13 @@ export default function App() {
   const [editReqNote, setEditReqNote] = useState('');
   const [editReqStatus, setEditReqStatus] = useState('approved');
 
-  // Collapsible Accordion States for Supervisor Board
+  // Collapsible Accordion States for Supervisor Board (All Closed by Default)
   const [openSections, setOpenSections] = useState({
-    taskPool: true,
-    reassigned: true,
-    validation: true,
-    inProgress: true,
+    createTask: false,
+    taskPool: false,
+    reassigned: false,
+    validation: false,
+    inProgress: false,
     allocated: false,
     archive: false
   });
@@ -2786,24 +2787,39 @@ export default function App() {
         {/* ================= SUPERVISOR DASHBOARD WITH OPEN POOL & COLLAPSIBLE CARDS ================= */}
         {activeTab === 'tasks' && isSupervisor && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 h-fit space-y-5 shadow-xs">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100 gap-2">
-                <div className="flex items-center space-x-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-                    <Plus className="w-4 h-4"/>
+            <div className="bg-white rounded-2xl border-2 border-indigo-200 h-fit overflow-hidden shadow-xs">
+              <button
+                type="button"
+                onClick={() => toggleSection('createTask')}
+                className="w-full p-4 bg-indigo-50/80 hover:bg-indigo-100/70 flex items-center justify-between text-left transition-all">
+                <div className="flex items-center space-x-3">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                    <Plus className="w-5 h-5"/>
                   </div>
-                  <h2 className="font-bold text-slate-800 text-base">Create / Drop Task</h2>
+                  <div>
+                    <h2 className="font-bold text-slate-900 text-sm">Create / Drop Task</h2>
+                    <p className="text-[11px] text-indigo-800">Assign jobs to staff or drop into the Open Pool</p>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleRunDailyStandingTasks(true)}
-                  className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px] flex items-center space-x-1 shrink-0">
-                  <Sparkles className="w-3.5 h-3.5"/>
-                  <span>Drop {todayDayCode} Routine</span>
-                </button>
-              </div>
+                <div className="flex items-center space-x-2">
+                  {openSections.createTask ? <ChevronUp className="w-5 h-5 text-indigo-800"/> : <ChevronDown className="w-5 h-5 text-indigo-800"/>}
+                </div>
+              </button>
 
-              <form onSubmit={handleCreateTask} className="space-y-4">
+              {openSections.createTask && (
+                <div className="p-5 sm:p-6 space-y-5 bg-white border-t border-indigo-100">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100 gap-2">
+                    <span className="text-xs font-bold uppercase text-slate-500">Task Details & Routine Drop</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRunDailyStandingTasks(true)}
+                      className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px] flex items-center space-x-1 shrink-0">
+                      <Sparkles className="w-3.5 h-3.5"/>
+                      <span>Drop {todayDayCode} Routine</span>
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleCreateTask} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-slate-600 uppercase">Assignment Destination</label>
                   <div className="grid grid-cols-2 gap-2">
@@ -3072,7 +3088,9 @@ export default function App() {
                   <Plus className="w-4 h-4"/>
                   <span>{isPoolTaskMode ? 'Drop into Open Task Pool' : 'Drop Task onto List'}</span>
                 </button>
-              </form>
+                  </form>
+                </div>
+              )}
             </div>
 
             <div className="lg:col-span-2 space-y-4">
