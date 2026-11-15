@@ -442,7 +442,14 @@ export default function App() {
   const [reqEndDate, setReqEndDate] = useState('');
   const [reqNote, setReqNote] = useState('');
   const [managerReplyInputs, setManagerReplyInputs] = useState({});
-  const [requestsListOpen, setRequestsListOpen] = useState(false); // Collapsible All Team Requests Card
+  const [requestsListOpen, setRequestsListOpen] = useState(true); // Collapsible All Team Requests Card
+  const [editingRequestId, setEditingRequestId] = useState(null);
+  const [editReqTargetUserId, setEditReqTargetUserId] = useState('');
+  const [editReqType, setEditReqType] = useState('Time Off / Holiday');
+  const [editReqStartDate, setEditReqStartDate] = useState('');
+  const [editReqEndDate, setEditReqEndDate] = useState('');
+  const [editReqNote, setEditReqNote] = useState('');
+  const [editReqStatus, setEditReqStatus] = useState('approved');
 
   // Collapsible Accordion States for Supervisor Board
   const [openSections, setOpenSections] = useState({
@@ -1795,22 +1802,48 @@ export default function App() {
 
   const handleDeleteSingleRequest = async (reqId) => {
     await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'requests', reqId));
-    showToast("Request Removed", "Deleted request entry.");
+    if (editingRequestId === reqId) setEditingRequestId(null);
+    showToast("Holiday / Request Deleted", "Removed entry from the calendar.");
   };
 
-  const handleClearDecidedRequests = async () => {
-    const decided = requests.filter((r) => r.status === 'approved' || r.status === 'declined');
-    for (const r of decided) {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'requests', r.id));
-    }
-    showToast("Decided Requests Cleared", `Cleared ${decided.length} processed request(s).`);
+  const startEditRequest = (req) => {
+    setEditingRequestId(req.id);
+    setEditReqTargetUserId(req.requesterId || currentUser.id);
+    setEditReqType(req.type || 'Time Off / Holiday');
+    setEditReqStartDate(req.startDate || req.dates || '');
+    setEditReqEndDate(req.endDate || req.startDate || req.dates || '');
+    setEditReqNote(req.note || '');
+    setEditReqStatus(req.status || 'approved');
+    setRequestsListOpen(true);
   };
 
-  const handleClearAllRequests = async () => {
-    for (const r of requests) {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'requests', r.id));
+  const handleSaveEditRequest = async (reqId) => {
+    if (!editReqStartDate) {
+      showToast("Missing Date", "Please provide a start date.");
+      return;
     }
-    showToast("All Requests Cleared", "All requests have been removed.");
+    const targetUserObj = teamUsers.find((u) => u.id === editReqTargetUserId);
+    const updatedEnd = editReqType === 'Time Off / Holiday' ? (editReqEndDate || editReqStartDate) : editReqStartDate;
+    const formattedDates =
+      editReqType === 'Time Off / Holiday' && updatedEnd && updatedEnd !== editReqStartDate
+        ? `${editReqStartDate} to ${updatedEnd}`
+        : editReqStartDate;
+
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'requests', reqId), {
+      requesterId: targetUserObj ? targetUserObj.id : editReqTargetUserId,
+      requesterName: targetUserObj ? targetUserObj.name : 'Colleague',
+      type: editReqType,
+      startDate: editReqStartDate,
+      endDate: updatedEnd,
+      dates: formattedDates,
+      note: editReqNote.trim(),
+      status: editReqStatus,
+      reviewedBy: currentUser.name,
+      reviewedAt: new Date().toISOString()
+    });
+
+    setEditingRequestId(null);
+    showToast("Holiday Updated", "Saved changes to the holiday calendar.");
   };
 
   const handleAddUser = async (e) => {
@@ -4331,33 +4364,87 @@ export default function App() {
                 </div>
 
                 {selectedCalendarDay && (
-                  <div className="p-3.5 bg-indigo-50/70 rounded-xl border border-indigo-200 text-xs flex items-center justify-between">
-                    <div>
-                      <span className="font-bold text-indigo-900">Selected Date: {selectedCalendarDay}</span>
-                      <p className="text-slate-600 mt-0.5">
-                        {blackoutDates[selectedCalendarDay] ? 'Management Blackout Active. ' : ''}
-                        {requests
-                          .filter(
-                            (r) =>
-                              r.type === 'Time Off / Holiday' &&
-                              (r.status === 'approved' || r.status === 'pending') &&
-                              getDatesInRange(r.startDate || r.dates, r.endDate || r.startDate || r.dates).includes(selectedCalendarDay)
-                          )
-                          .map((r) => `${r.requesterName} (${r.status})`)
-                          .join(', ') || (!blackoutDates[selectedCalendarDay] ? 'No staff booked off on this day.' : '')}
-                      </p>
+                  <div className="p-4 bg-indigo-50/70 rounded-xl border border-indigo-200 text-xs space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-bold text-indigo-900 text-sm">Selected Date: {selectedCalendarDay}</span>
+                        {blackoutDates[selectedCalendarDay] && (
+                          <span className="ml-2 px-2 py-0.5 bg-rose-600 text-white rounded text-[10px] font-bold">
+                            Management Blackout Active
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCalendarDay(null)}
+                        className="text-slate-400 hover:text-slate-700 font-bold px-2 py-1">
+                        ✕
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCalendarDay(null)}
-                      className="text-slate-400 hover:text-slate-700 font-bold px-2 py-1">
-                      ✕
-                    </button>
+
+                    {(() => {
+                      const dayReqs = requests.filter(
+                        (r) =>
+                          r.type === 'Time Off / Holiday' &&
+                          (r.status === 'approved' || r.status === 'pending') &&
+                          getDatesInRange(r.startDate || r.dates, r.endDate || r.startDate || r.dates).includes(selectedCalendarDay)
+                      );
+                      if (dayReqs.length === 0) {
+                        return (
+                          <p className="text-slate-600 italic">
+                            No staff booked off on this day.
+                          </p>
+                        );
+                      }
+                      return (
+                        <div className="space-y-1.5 pt-1">
+                          {dayReqs.map((r) => (
+                            <div
+                              key={r.id}
+                              className="p-2.5 rounded-xl bg-white border border-indigo-200/80 flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <span className="font-bold text-slate-900">{r.requesterName}</span>
+                                <span className="text-slate-500 ml-1.5">
+                                  ({r.dates || r.startDate})
+                                </span>
+                                <span
+                                  className={`ml-2 px-2 py-0.5 rounded font-bold uppercase text-[10px] ${
+                                    r.status === 'approved'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-amber-100 text-amber-900'
+                                  }`}>
+                                  {r.status}
+                                </span>
+                                {r.note && <p className="text-[11px] text-slate-600 mt-0.5">Note: "{r.note}"</p>}
+                              </div>
+
+                              {isSupervisor && (
+                                <div className="flex items-center space-x-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditRequest(r)}
+                                    className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-semibold text-[11px]">
+                                    Edit Holiday
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSingleRequest(r.id)}
+                                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg font-semibold text-[11px] flex items-center space-x-1">
+                                    <Trash2 className="w-3 h-3"/>
+                                    <span>Delete</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
 
-              {/* COLLAPSIBLE ALL TEAM REQUESTS CARD WITH CLEAR OPTIONS */}
+              {/* COLLAPSIBLE ALL TEAM REQUESTS CARD (INDIVIDUAL EDIT & DELETE FOR MANAGER / TEAM LEADER) */}
               <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
                 <button
                   type="button"
@@ -4369,7 +4456,7 @@ export default function App() {
                     </div>
                     <div>
                       <h3 className="font-bold text-slate-900 text-sm">
-                        {isSupervisor ? 'All Team Requests (Tap to Open / Clear)' : 'My Submitted Requests'}
+                        {isSupervisor ? 'All Team Holidays & Requests (Tap to Edit or Delete)' : 'My Submitted Requests'}
                       </h3>
                       <p className="text-[11px] text-slate-500">
                         {pendingRequestsCount} Pending • {requests.length} Total Logged
@@ -4388,69 +4475,175 @@ export default function App() {
 
                 {requestsListOpen && (
                   <div className="p-4 sm:p-6 space-y-4 bg-white">
-                    {isSupervisor && requests.length > 0 && (
-                      <div className="flex flex-wrap items-center justify-end gap-2 pb-2 border-b border-slate-100">
-                        <button
-                          type="button"
-                          onClick={handleClearDecidedRequests}
-                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold">
-                          Clear Decided (Approved/Declined)
-                        </button>
-                        {isManager && (
-                          <button
-                            type="button"
-                            onClick={handleClearAllRequests}
-                            className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-semibold">
-                            Clear All Requests
-                          </button>
-                        )}
-                      </div>
-                    )}
-
                     <div className="space-y-3">
                       {(isSupervisor ? requests : requests.filter((r) => r.requesterId === currentUser.id)).length === 0 ? (
                         <p className="text-xs text-slate-400 italic text-center py-4">No requests in the list.</p>
                       ) : (
                         (isSupervisor ? requests : requests.filter((r) => r.requesterId === currentUser.id)).map((r) => (
-                          <div key={r.id} className="p-4 rounded-xl border border-slate-200 space-y-2 bg-slate-50">
-                            <div className="flex items-center justify-between gap-2 text-xs">
-                              <span className="font-bold text-indigo-600">
-                                {r.requesterName} • {r.type} {r.dates ? `(${r.dates})` : ''}
-                              </span>
-                              <div className="flex items-center space-x-2">
-                                <span
-                                  className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] ${
-                                    r.status === 'approved'
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : r.status === 'declined'
-                                      ? 'bg-rose-100 text-rose-800'
-                                      : 'bg-amber-100 text-amber-900'
-                                  }`}>
-                                  {r.status}
-                                </span>
-                                {(isSupervisor || r.requesterId === currentUser.id) && (
+                          <div key={r.id} className="p-4 rounded-xl border border-slate-200 space-y-3 bg-slate-50">
+                            {editingRequestId === r.id && isSupervisor ? (
+                              <div className="bg-indigo-50/80 p-4 rounded-xl border border-indigo-200 space-y-3">
+                                <div className="flex items-center justify-between border-b border-indigo-200 pb-2">
+                                  <span className="font-bold text-xs text-indigo-950 uppercase">
+                                    Edit Colleague Holiday / Request
+                                  </span>
                                   <button
                                     type="button"
-                                    onClick={() => handleDeleteSingleRequest(r.id)}
-                                    className="p-1 text-slate-400 hover:text-rose-600 rounded">
-                                    <Trash2 className="w-3.5 h-3.5"/>
+                                    onClick={() => setEditingRequestId(null)}
+                                    className="text-slate-400 hover:text-slate-700 text-xs font-bold">
+                                    ✕
                                   </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                  <div>
+                                    <label className="block text-[10px] font-bold uppercase text-indigo-900 mb-1">Colleague</label>
+                                    <select
+                                      value={editReqTargetUserId}
+                                      onChange={(e) => setEditReqTargetUserId(e.target.value)}
+                                      className="w-full px-2.5 py-1.5 rounded-lg border border-indigo-200 text-xs bg-white font-semibold">
+                                      {teamUsers.map((u) => (
+                                        <option key={u.id} value={u.id}>{u.name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-[10px] font-bold uppercase text-indigo-900 mb-1">Request Type</label>
+                                    <select
+                                      value={editReqType}
+                                      onChange={(e) => setEditReqType(e.target.value)}
+                                      className="w-full px-2.5 py-1.5 rounded-lg border border-indigo-200 text-xs bg-white font-semibold">
+                                      <option value="Time Off / Holiday">Time Off / Holiday</option>
+                                      <option value="Shift Swap">Shift Swap</option>
+                                      <option value="Equipment / Uniform">Equipment / Uniform</option>
+                                      <option value="General Manager Request">General Manager Request</option>
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-[10px] font-bold uppercase text-indigo-900 mb-1">Booking Status</label>
+                                    <select
+                                      value={editReqStatus}
+                                      onChange={(e) => setEditReqStatus(e.target.value)}
+                                      className="w-full px-2.5 py-1.5 rounded-lg border border-indigo-200 text-xs bg-white font-semibold">
+                                      <option value="approved">Approved</option>
+                                      <option value="pending">Pending</option>
+                                      <option value="declined">Declined</option>
+                                    </select>
+                                  </div>
+                                </div>
+
+                                {editReqType === 'Time Off / Holiday' ? (
+                                  <div className="grid grid-cols-2 gap-2.5">
+                                    <div>
+                                      <label className="block text-[10px] font-bold uppercase text-indigo-900 mb-1">Start Date</label>
+                                      <input
+                                        type="date"
+                                        value={editReqStartDate}
+                                        onChange={(e) => setEditReqStartDate(e.target.value)}
+                                        className="w-full px-2.5 py-1.5 rounded-lg border border-indigo-200 text-xs bg-white font-semibold"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-bold uppercase text-indigo-900 mb-1">End Date</label>
+                                      <input
+                                        type="date"
+                                        value={editReqEndDate}
+                                        onChange={(e) => setEditReqEndDate(e.target.value)}
+                                        className="w-full px-2.5 py-1.5 rounded-lg border border-indigo-200 text-xs bg-white font-semibold"
+                                      />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <label className="block text-[10px] font-bold uppercase text-indigo-900 mb-1">Relevant Dates</label>
+                                    <input
+                                      type="text"
+                                      value={editReqStartDate}
+                                      onChange={(e) => setEditReqStartDate(e.target.value)}
+                                      className="w-full px-2.5 py-1.5 rounded-lg border border-indigo-200 text-xs bg-white font-semibold"
+                                    />
+                                  </div>
                                 )}
+
+                                <div>
+                                  <label className="block text-[10px] font-bold uppercase text-indigo-900 mb-1">Notes / Reason</label>
+                                  <input
+                                    type="text"
+                                    value={editReqNote}
+                                    onChange={(e) => setEditReqNote(e.target.value)}
+                                    placeholder="Holiday or request note..."
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-indigo-200 text-xs bg-white"
+                                  />
+                                </div>
+
+                                <div className="flex justify-end space-x-2 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingRequestId(null)}
+                                    className="px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-700">
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveEditRequest(r.id)}
+                                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold">
+                                    Save Holiday Changes
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                            <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border">{r.note}</p>
-                            {isSupervisor && r.status === 'pending' && (
-                              <div className="flex flex-wrap gap-2 pt-1">
-                                <input
-                                  type="text"
-                                  value={managerReplyInputs[r.id] || ''}
-                                  onChange={(e) => setManagerReplyInputs((prev) => ({ ...prev, [r.id]: e.target.value }))}
-                                  placeholder="Reply note..."
-                                  className="flex-1 min-w-[140px] px-3 py-1.5 rounded-lg border text-xs bg-white"
-                                />
-                                <button onClick={() => handleDecisionRequest(r, 'approved')} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Approve</button>
-                                <button onClick={() => handleDecisionRequest(r, 'declined')} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-semibold">Decline</button>
-                              </div>
+                            ) : (
+                              <>
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                  <span className="font-bold text-indigo-600">
+                                    {r.requesterName} • {r.type} {r.dates ? `(${r.dates})` : ''}
+                                  </span>
+                                  <div className="flex items-center space-x-2">
+                                    <span
+                                      className={`px-2 py-0.5 rounded font-bold uppercase text-[10px] ${
+                                        r.status === 'approved'
+                                          ? 'bg-emerald-100 text-emerald-800'
+                                          : r.status === 'declined'
+                                          ? 'bg-rose-100 text-rose-800'
+                                          : 'bg-amber-100 text-amber-900'
+                                      }`}>
+                                      {r.status}
+                                    </span>
+                                    {isSupervisor && (
+                                      <button
+                                        type="button"
+                                        onClick={() => startEditRequest(r)}
+                                        className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-semibold text-[11px]">
+                                        Edit
+                                      </button>
+                                    )}
+                                    {(isSupervisor || r.requesterId === currentUser.id) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteSingleRequest(r.id)}
+                                        className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg font-semibold text-[11px] flex items-center space-x-1">
+                                        <Trash2 className="w-3.5 h-3.5"/>
+                                        <span>Delete</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                                <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border">{r.note}</p>
+                                {isSupervisor && r.status === 'pending' && (
+                                  <div className="flex flex-wrap gap-2 pt-1">
+                                    <input
+                                      type="text"
+                                      value={managerReplyInputs[r.id] || ''}
+                                      onChange={(e) => setManagerReplyInputs((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                                      placeholder="Reply note..."
+                                      className="flex-1 min-w-[140px] px-3 py-1.5 rounded-lg border text-xs bg-white"
+                                    />
+                                    <button onClick={() => handleDecisionRequest(r, 'approved')} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Approve</button>
+                                    <button onClick={() => handleDecisionRequest(r, 'declined')} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-semibold">Decline</button>
+                                  </div>
+                                )}
+                              </>
                             )}
                           </div>
                         ))
